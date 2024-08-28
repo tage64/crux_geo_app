@@ -1,0 +1,15 @@
+[package]
+name = "crux_geolocation"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[features]
+typegen = []
+
+[dependencies]
+crux_core.workspace = true
+futures = "0.3.30"
+serde.workspace = true

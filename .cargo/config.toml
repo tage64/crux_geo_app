@@ -1,0 +1,4 @@
+[alias]
+binstall = ["bin", "cargo-binstall"]
+trunk = ["bin", "cargo-trunk"]
+xcode = ["bin", "cargo-xcode"]

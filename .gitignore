@@ -1,0 +1,8 @@
+## Absolute Paths
+/.bin/
+/shared_types/generated
+/web-leptos/dist
+
+## Relative Files and Directories
+target/
+*.pbxproj
