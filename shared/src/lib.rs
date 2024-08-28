@@ -1,14 +1,14 @@
-pub mod app;
+pub mod geo_app;
 
 use std::sync::LazyLock;
 
-pub use app::*;
 pub use crux_core::{bridge::Bridge, Core, Request};
+pub use geo_app::*;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 uniffi::include_scaffolding!("shared");
 
-static CORE: LazyLock<Bridge<Effect, Counter>> = LazyLock::new(|| Bridge::new(Core::new()));
+static CORE: LazyLock<Bridge<Effect, GeoApp>> = LazyLock::new(|| Bridge::new(Core::new()));
 
 #[wasm_bindgen]
 pub fn process_event(data: &[u8]) -> Vec<u8> {

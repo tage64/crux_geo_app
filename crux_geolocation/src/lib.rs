@@ -68,13 +68,18 @@ pub enum Request {
 }
 
 /// An error which may occur when retrieving the current position.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Serialize, Deserialize, derive_more::Display, derive_more::Error,
+)]
 #[serde(rename_all = "camelCase")]
 #[repr(u8)]
 pub enum Error {
+    #[display("Permission denied")]
     PermissionDenied = 1,
+    #[display("Position unavaillable")]
     PositionUnavaillable = 2,
     /// The time allowed to acquire the position was reached before the information was obtained.
+    #[display("Position retrieval timed out")]
     Timeout = 3,
 }
 
