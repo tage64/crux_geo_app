@@ -11,5 +11,7 @@ keywords = ["crux", "crux_core", "cross-platform-ui", "ffi", "wasm"]
 
 [workspace.dependencies]
 anyhow = "1.0.86"
+chrono = "0.4.38"
 crux_core = "0.8.1"
+jord = "0.14.0"
 serde = { version = "1.0.209", features = ["derive"] }

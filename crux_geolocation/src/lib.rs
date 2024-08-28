@@ -1,10 +1,13 @@
 use std::sync::{Arc, Mutex};
 
+use chrono::{DateTime, Utc};
 use crux_core::capability::{CapabilityContext, Operation};
 use futures::{Stream, StreamExt as _};
+use jord::{Angle, LatLong, Length, Speed};
 use serde::{Deserialize, Serialize};
 
-/// The coordinates, altitude, speed and bearing of a device.
+/// The coordinates, altitude, speed and bearing of a device. (This type is used only by the shell
+/// and not the app.)
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
@@ -24,9 +27,9 @@ pub struct Position {
     /// is. 0 degrees represents true north, and the direction is determined clockwise (which means
     /// that east is 90 degrees and west is 270 degrees). If speed is 0 or the device is unable to
     /// provide heading information, heading is `None`.
-    pub heading: f64,
-    /// The velocity of the device in meters per second, (Optional)
-    pub volocity: f64,
+    pub heading: Option<f64>,
+    /// The velocity of the device in meters per second. (Optional)
+    pub volocity: Option<f64>,
 }
 
 /// Options when retrieving a position.
@@ -75,6 +78,8 @@ pub enum Error {
     Timeout = 3,
 }
 
+pub type Result<T, E = Error> = core::result::Result<T, E>;
+
 /// A position response.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Response {
@@ -89,6 +94,31 @@ pub enum Response {
 
 impl Operation for Request {
     type Output = Response;
+}
+
+/// The coordinates, altitude, speed and bearing of a device. (This type is used only by the shell
+/// and not the app.)
+#[derive(Clone, Debug, PartialEq)]
+pub struct GeoInfo {
+    /// The timestamp when the position was retrieved.
+    pub timestamp: DateTime<Utc>,
+    /// The latitude and longitude of the device on earth.
+    pub coords: LatLong,
+    /// The altitude of the device, relative to nominal sea level. (Optional)
+    pub altitude: Option<Length>,
+    /// The accuracy of latitude and longitude. (Optional).
+    pub accuracy: Option<Length>,
+    /// The accuracy of the altitude. (Optional)
+    pub altitude_accuracy: Option<Length>,
+    /// The direction towards which the device is facing. (Optional)
+    ///
+    /// This value specifies how far off from heading true north the device is. 0 degrees
+    /// represents true north, and the direction is determined clockwise (which means that east is
+    /// 90 degrees and west is 270 degrees). If speed is 0 or the device is unable to provide
+    /// heading information, heading is `None`.
+    pub bearing: Option<Angle>,
+    /// The velocity of the device. (Optional)
+    pub volocity: Option<Speed>,
 }
 
 /// The Geolocation capability API
@@ -147,7 +177,7 @@ where
     /// Request the current position.
     pub fn get_position<F>(&self, options: Options, callback: F)
     where
-        F: FnOnce(Response) -> Ev + Send + Sync + 'static,
+        F: FnOnce(Result<GeoInfo>) -> Ev + Send + Sync + 'static,
     {
         self.context.spawn({
             let context = self.context.clone();
@@ -162,10 +192,12 @@ where
     /// Request the current position.
     ///
     /// This is an async call to use with [`crux_core::compose::Compose`].
-    pub async fn get_position_async(&self, options: Options) -> Response {
-        self.context
-            .request_from_shell(Request::GetCurrentPosition(options))
-            .await
+    pub async fn get_position_async(&self, options: Options) -> Result<GeoInfo> {
+        response_to_geo_info(
+            self.context
+                .request_from_shell(Request::GetCurrentPosition(options))
+                .await,
+        )
     }
 
     /// Watch the current position and stream when the position changes.
@@ -173,7 +205,7 @@ where
     /// Any existing watch will be cleared.
     pub fn watch_position<F>(&self, options: Options, mut callback: F)
     where
-        F: FnMut(Response) -> Ev + Send + Sync + 'static,
+        F: FnMut(Result<GeoInfo>) -> Ev + Send + Sync + 'static,
     {
         self.context.spawn({
             let context = self.context.clone();
@@ -192,11 +224,15 @@ where
     /// Request the current position.
     ///
     /// This is an async call to use with [`crux_core::compose::Compose`].
-    pub async fn watch_position_async(&self, options: Options) -> impl Stream<Item = Response> {
+    pub async fn watch_position_async(
+        &self,
+        options: Options,
+    ) -> impl Stream<Item = Result<GeoInfo>> {
         // Clear earlier watch.
         self.clear_watch_async().await;
         self.context
             .stream_from_shell(Request::GetCurrentPosition(options))
+            .map(response_to_geo_info)
     }
 
     /// Cancel any existing position watcher.
@@ -216,5 +252,33 @@ where
         if let Some(id) = maybe_id {
             self.context.notify_shell(Request::ClearWatch(id)).await
         }
+    }
+}
+
+fn response_to_geo_info(response: Response) -> Result<GeoInfo> {
+    match response {
+        Response::Position {
+            timestamp,
+            coords:
+                Position {
+                    latitude,
+                    longitude,
+                    altitude,
+                    accuracy,
+                    altitude_accuracy,
+                    heading,
+                    volocity,
+                },
+        } => Ok(GeoInfo {
+            timestamp: DateTime::from_timestamp_millis(timestamp)
+                .expect("Failed to create timestamp from millis."),
+            coords: LatLong::from_degrees(latitude, longitude),
+            altitude: altitude.map(Length::from_metres),
+            accuracy: accuracy.map(Length::from_metres),
+            altitude_accuracy: altitude_accuracy.map(Length::from_metres),
+            bearing: heading.map(Angle::from_degrees),
+            volocity: volocity.map(Speed::from_metres_per_second),
+        }),
+        Response::Error(e) => Err(e),
     }
 }

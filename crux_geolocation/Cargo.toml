@@ -10,6 +10,8 @@ keywords.workspace = true
 typegen = []
 
 [dependencies]
+chrono.workspace = true
 crux_core.workspace = true
 futures = "0.3.30"
+jord.workspace = true
 serde.workspace = true
