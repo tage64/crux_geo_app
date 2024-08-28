@@ -1,8 +1,9 @@
 pub mod app;
 
+use std::sync::LazyLock;
+
 pub use app::*;
 pub use crux_core::{bridge::Bridge, Core, Request};
-use std::sync::LazyLock;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 uniffi::include_scaffolding!("shared");

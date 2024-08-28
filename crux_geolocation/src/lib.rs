@@ -1,7 +1,8 @@
+use std::sync::{Arc, Mutex};
+
 use crux_core::capability::{CapabilityContext, Operation};
 use futures::{Stream, StreamExt as _};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 
 /// The coordinates, altitude, speed and bearing of a device.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
