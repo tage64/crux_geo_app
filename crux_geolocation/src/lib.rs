@@ -35,7 +35,7 @@ pub struct Position {
 /// Options when retrieving a position.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Options {
+pub struct GeoOptions {
     /// A positive value indicating the maximum age in milliseconds of a possible cached
     /// position that is acceptable to return.
     ///
@@ -61,9 +61,9 @@ pub struct Options {
 /// A position operation.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum Request {
-    GetCurrentPosition(Options),
-    WatchPosition(Options),
+pub enum GeoRequest {
+    GetCurrentPosition(GeoOptions),
+    WatchPosition(GeoOptions),
     ClearWatch(i64),
 }
 
@@ -73,7 +73,7 @@ pub enum Request {
 )]
 #[serde(rename_all = "camelCase")]
 #[repr(u8)]
-pub enum Error {
+pub enum GeoError {
     #[display("Permission denied")]
     PermissionDenied = 1,
     #[display("Position unavaillable")]
@@ -83,22 +83,24 @@ pub enum Error {
     Timeout = 3,
 }
 
-pub type Result<T, E = Error> = core::result::Result<T, E>;
+pub type GeoResult<T, E = GeoError> = Result<T, E>;
 
 /// A position response.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum Response {
+pub enum GeoResponse {
     Position {
         /// The location.
         coords: Position,
         /// The time when the location was retrieved as Unix time in milliseconds.
         timestamp: i64,
     },
-    Error(Error),
+    PermissionDeniedError,
+    PositionUnavaillableError,
+    TimeoutError,
 }
 
-impl Operation for Request {
-    type Output = Response;
+impl Operation for GeoRequest {
+    type Output = GeoResponse;
 }
 
 /// The coordinates, altitude, speed and bearing of a device. (This type is used only by the shell
@@ -131,7 +133,7 @@ pub struct GeoInfo {
 /// This capability provides access to the current location and allows the app to watch position
 /// updates.
 pub struct Geolocation<Ev> {
-    context: CapabilityContext<Request, Ev>,
+    context: CapabilityContext<GeoRequest, Ev>,
     /// An id of current watch, used to clear the watch.
     watch_id: Arc<Mutex<Option<i64>>>,
 }
@@ -146,7 +148,7 @@ impl<Ev> Clone for Geolocation<Ev> {
 }
 
 impl<Ev> crux_core::Capability<Ev> for Geolocation<Ev> {
-    type Operation = Request;
+    type Operation = GeoRequest;
     type MappedSelf<MappedEv> = Geolocation<MappedEv>;
 
     fn map_event<F, NewEv>(&self, f: F) -> Self::MappedSelf<NewEv>
@@ -159,10 +161,12 @@ impl<Ev> crux_core::Capability<Ev> for Geolocation<Ev> {
     }
 
     #[cfg(feature = "typegen")]
-    fn register_types(generator: &mut crux_core::typegen::TypeGen) -> crux_core::typegen::Result {
+    fn register_types(
+        generator: &mut crux_core::typegen::TypeGen,
+    ) -> crux_core::typegen::GeoResult {
         generator.register_type::<Position>()?;
-        generator.register_type::<Options>()?;
-        generator.register_type::<Error>()?;
+        generator.register_type::<GeoOptions>()?;
+        generator.register_type::<GeoError>()?;
         generator.register_type::<Self::Operation>()?;
         generator.register_type::<<Self::Operation as Operation>::Output>()?;
         Ok(())
@@ -172,7 +176,7 @@ impl<Ev> Geolocation<Ev>
 where
     Ev: 'static,
 {
-    pub fn new(context: CapabilityContext<Request, Ev>) -> Self {
+    pub fn new(context: CapabilityContext<GeoRequest, Ev>) -> Self {
         Self {
             context,
             watch_id: Arc::new(Mutex::new(None)),
@@ -180,9 +184,9 @@ where
     }
 
     /// Request the current position.
-    pub fn get_position<F>(&self, options: Options, callback: F)
+    pub fn get_position<F>(&self, options: GeoOptions, callback: F)
     where
-        F: FnOnce(Result<GeoInfo>) -> Ev + Send + Sync + 'static,
+        F: FnOnce(GeoResult<GeoInfo>) -> Ev + Send + Sync + 'static,
     {
         self.context.spawn({
             let context = self.context.clone();
@@ -197,10 +201,10 @@ where
     /// Request the current position.
     ///
     /// This is an async call to use with [`crux_core::compose::Compose`].
-    pub async fn get_position_async(&self, options: Options) -> Result<GeoInfo> {
+    pub async fn get_position_async(&self, options: GeoOptions) -> GeoResult<GeoInfo> {
         response_to_geo_info(
             self.context
-                .request_from_shell(Request::GetCurrentPosition(options))
+                .request_from_shell(GeoRequest::GetCurrentPosition(options))
                 .await,
         )
     }
@@ -208,9 +212,9 @@ where
     /// Watch the current position and stream when the position changes.
     ///
     /// Any existing watch will be cleared.
-    pub fn watch_position<F>(&self, options: Options, mut callback: F)
+    pub fn watch_position<F>(&self, options: GeoOptions, mut callback: F)
     where
-        F: FnMut(Result<GeoInfo>) -> Ev + Send + Sync + 'static,
+        F: FnMut(GeoResult<GeoInfo>) -> Ev + Send + Sync + 'static,
     {
         self.context.spawn({
             let context = self.context.clone();
@@ -231,12 +235,12 @@ where
     /// This is an async call to use with [`crux_core::compose::Compose`].
     pub async fn watch_position_async(
         &self,
-        options: Options,
-    ) -> impl Stream<Item = Result<GeoInfo>> {
+        options: GeoOptions,
+    ) -> impl Stream<Item = GeoResult<GeoInfo>> {
         // Clear earlier watch.
         self.clear_watch_async().await;
         self.context
-            .stream_from_shell(Request::GetCurrentPosition(options))
+            .stream_from_shell(GeoRequest::WatchPosition(options))
             .map(response_to_geo_info)
     }
 
@@ -255,14 +259,14 @@ where
     pub async fn clear_watch_async(&self) {
         let maybe_id = self.watch_id.lock().unwrap().take();
         if let Some(id) = maybe_id {
-            self.context.notify_shell(Request::ClearWatch(id)).await
+            self.context.notify_shell(GeoRequest::ClearWatch(id)).await
         }
     }
 }
 
-fn response_to_geo_info(response: Response) -> Result<GeoInfo> {
+fn response_to_geo_info(response: GeoResponse) -> GeoResult<GeoInfo> {
     match response {
-        Response::Position {
+        GeoResponse::Position {
             timestamp,
             coords:
                 Position {
@@ -284,6 +288,8 @@ fn response_to_geo_info(response: Response) -> Result<GeoInfo> {
             bearing: heading.map(Angle::from_degrees),
             volocity: volocity.map(Speed::from_metres_per_second),
         }),
-        Response::Error(e) => Err(e),
+        GeoResponse::PermissionDeniedError => Err(GeoError::PermissionDenied),
+        GeoResponse::PositionUnavaillableError => Err(GeoError::PositionUnavaillable),
+        GeoResponse::TimeoutError => Err(GeoError::Timeout),
     }
 }

@@ -3,7 +3,7 @@ pub mod view_types;
 use compact_str::format_compact;
 use compact_str::CompactString;
 use crux_core::{render::Render, App};
-use crux_geolocation::{GeoInfo, Geolocation, Options as GeoOptions, Result as GeoResult};
+use crux_geolocation::{GeoInfo, GeoOptions, GeoResult, Geolocation};
 pub use geo_types::SavedPos;
 use rstar::RTree;
 use serde::{Deserialize, Serialize};
