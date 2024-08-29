@@ -7,5 +7,7 @@ license.workspace = true
 keywords.workspace = true
 
 [dependencies]
+crux_geolocation = { version = "0.1.0", path = "../crux_geolocation" }
 leptos = { version = "0.6.14", features = ["csr"] }
+leptos-use = { version = "0.13.0", default-features = false, features = ["use_geolocation"] }
 shared = { version = "0.1.0", path = "../shared" }
