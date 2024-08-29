@@ -14,7 +14,7 @@ use super::SavedPos;
 ///
 /// The information fields are represented by strings, including the value and the unit but not the
 /// name. E.g. "59.265358° North", but the name "Latitude: " is not included.
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewPos {
     /// The name of a saved position or some dedicated string for the current position.
     pub name: CompactString,
@@ -51,7 +51,7 @@ impl SavedPos {
 ///
 /// The information fields are represented by strings, including the value and the unit but not the
 /// name. E.g. "3.1 km/h", but the name "Speed: " is not included.
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewVolocity {
     pub volocity: CompactString,
     pub bearing: Option<CompactString>,
@@ -71,7 +71,7 @@ impl ViewVolocity {
 }
 
 /// The entire view model. This is everything sent to the UI.
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewModel {
     /// Current position.
     pub curr_pos: Option<ViewPos>,
