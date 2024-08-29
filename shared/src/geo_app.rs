@@ -29,8 +29,8 @@ pub enum Event {
 }
 
 const GEOLOCATION_OPTIONS: GeoOptions = GeoOptions {
-    maximum_age: 0.0,
-    timeout: Some(1000.0),
+    maximum_age: 0,
+    timeout: Some(27000),
     enable_high_accuracy: true,
 };
 

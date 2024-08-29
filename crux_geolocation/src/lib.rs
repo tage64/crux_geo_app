@@ -40,14 +40,13 @@ pub struct GeoOptions {
     /// position that is acceptable to return.
     ///
     /// If set to 0, it means that the device cannot use a cached position and must attempt to
-    /// retrieve the real current position. If set to Infinity the device must return a cached
-    /// position regardless of its age. Default: 0.
-    pub maximum_age: f64,
+    /// retrieve the real current position.
+    pub maximum_age: u64,
     /// A positive value representing the maximum length of time (in milliseconds) the device is
     /// allowed to take in order to return a position.
     ///
     /// `None` means that the device will not return until the position is availlable.
-    pub timeout: Option<f64>,
+    pub timeout: Option<u64>,
     /// A bool that indicates the application would like to receive the best possible results.
     ///
     /// If true and if the device is able to provide a more accurate position, it will do
