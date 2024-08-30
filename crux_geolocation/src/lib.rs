@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use chrono::{DateTime, Utc};
 use crux_core::capability::{CapabilityContext, Operation};
 use futures::{Stream, StreamExt as _};
@@ -61,9 +59,8 @@ pub struct GeoOptions {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GeoRequest {
-    GetCurrentPosition(GeoOptions),
     WatchPosition(GeoOptions),
-    ClearWatch(i64),
+    ClearWatch,
 }
 
 /// An error which may occur when retrieving the current position.
@@ -133,15 +130,12 @@ pub struct GeoInfo {
 /// updates.
 pub struct Geolocation<Ev> {
     context: CapabilityContext<GeoRequest, Ev>,
-    /// An id of current watch, used to clear the watch.
-    watch_id: Arc<Mutex<Option<i64>>>,
 }
 
 impl<Ev> Clone for Geolocation<Ev> {
     fn clone(&self) -> Self {
         Self {
             context: self.context.clone(),
-            watch_id: self.watch_id.clone(),
         }
     }
 }
@@ -176,36 +170,7 @@ where
     Ev: 'static,
 {
     pub fn new(context: CapabilityContext<GeoRequest, Ev>) -> Self {
-        Self {
-            context,
-            watch_id: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    /// Request the current position.
-    pub fn get_position<F>(&self, options: GeoOptions, callback: F)
-    where
-        F: FnOnce(GeoResult<GeoInfo>) -> Ev + Send + Sync + 'static,
-    {
-        self.context.spawn({
-            let context = self.context.clone();
-            let this = self.clone();
-
-            async move {
-                context.update_app(callback(this.get_position_async(options).await));
-            }
-        });
-    }
-
-    /// Request the current position.
-    ///
-    /// This is an async call to use with [`crux_core::compose::Compose`].
-    pub async fn get_position_async(&self, options: GeoOptions) -> GeoResult<GeoInfo> {
-        response_to_geo_info(
-            self.context
-                .request_from_shell(GeoRequest::GetCurrentPosition(options))
-                .await,
-        )
+        Self { context }
     }
 
     /// Watch the current position and stream when the position changes.
@@ -236,8 +201,6 @@ where
         &self,
         options: GeoOptions,
     ) -> impl Stream<Item = GeoResult<GeoInfo>> {
-        // Clear earlier watch.
-        self.clear_watch_async().await;
         self.context
             .stream_from_shell(GeoRequest::WatchPosition(options))
             .map(response_to_geo_info)
@@ -256,10 +219,7 @@ where
     /// If no watcher is active, this method does nothing.
     /// This is an async call to use with [`crux_core::compose::Compose`].
     pub async fn clear_watch_async(&self) {
-        let maybe_id = self.watch_id.lock().unwrap().take();
-        if let Some(id) = maybe_id {
-            self.context.notify_shell(GeoRequest::ClearWatch(id)).await
-        }
+        self.context.notify_shell(GeoRequest::ClearWatch).await
     }
 }
 
