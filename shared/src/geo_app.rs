@@ -23,9 +23,6 @@ pub enum Event {
     /// Got a position update.
     #[serde(skip)]
     GeolocationUpdate(GeoResult<GeoInfo>),
-    /// Save an earlier requested position.
-    #[serde(skip)]
-    SavePos(CompactString, GeoResult<GeoInfo>),
 }
 
 const GEOLOCATION_OPTIONS: GeoOptions = GeoOptions {
@@ -67,18 +64,9 @@ impl App for GeoApp {
             Event::SaveCurrPos(name) => {
                 if let Some(Ok(geo)) = &model.curr_pos {
                     model.saved_positions.insert(SavedPos::new(name, geo));
-                } else {
-                    caps.geolocation
-                        .get_position(GEOLOCATION_OPTIONS, |x| Event::SavePos(name, x));
                 }
             }
             Event::GeolocationUpdate(geo_result) => model.curr_pos = Some(geo_result),
-            Event::SavePos(name, geo_result) => {
-                if let Ok(geo) = &geo_result {
-                    model.saved_positions.insert(SavedPos::new(name, &geo));
-                }
-                model.curr_pos = Some(geo_result);
-            }
         }
         caps.render.render();
     }

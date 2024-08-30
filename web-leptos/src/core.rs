@@ -1,66 +1,81 @@
 #![allow(unused_variables, dead_code)]
+mod geolocation;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crux_geolocation::{GeoOptions, GeoRequest};
-use leptos::{SignalUpdate, WriteSignal};
-use leptos_use::{use_geolocation_with_options, UseGeolocationOptions, UseGeolocationReturn};
+use geolocation::GeoWatch;
+use leptos::create_effect;
+use leptos::signal_prelude::*;
 use shared::{view_types::ViewModel, Effect, Event, GeoApp, Request};
 
-/// The app type that will be passed around.
-pub type App = Rc<AppStruct>;
+/// Signals to send events to and get the last view model from the app.
+#[derive(Clone, Copy)]
+pub struct App {
+    /// Signal to receive the latest view model.
+    pub view: ReadSignal<ViewModel>,
+    /// Signal to send events to the app.
+    pub set_event: WriteSignal<Event>,
+}
 
-/// Core struct with information about the app.
-pub struct AppStruct {
+/// A backend struct for the app.
+struct Backend {
     /// The core of the app.
-    pub core: shared::Core<Effect, GeoApp>,
+    core: shared::Core<Effect, GeoApp>,
+    /// Signal where new view models are sent from the core.
+    render: WriteSignal<ViewModel>,
+    /// Signal to receive events that should be sent to the core.
+    event: ReadSignal<Event>,
+    /// A possible current watch on the geolocation API.
+    geo_watch: RefCell<Option<GeoWatch>>,
 }
 
-pub fn new_app() -> App {
-    Rc::new(AppStruct {
-        core: shared::Core::new(),
-    })
-}
-
-pub fn update(app: &App, event: Event, render: WriteSignal<ViewModel>) {
-    for effect in app.core.process_event(event) {
-        process_effect(app, effect, render);
+impl App {
+    pub fn new() -> Self {
+        let core = shared::Core::new();
+        let (view, render) = create_signal(core.view());
+        let (event, set_event) = create_signal(Event::StartGeolocation);
+        let backend = Rc::new(Backend {
+            core,
+            render,
+            event,
+            geo_watch: RefCell::new(None),
+        });
+        create_effect(move |_| {
+            for effect in backend.core.process_event(backend.event.get()) {
+                backend.process_effect(effect);
+            }
+        });
+        Self { view, set_event }
     }
 }
 
-pub fn process_effect(app: &App, effect: Effect, render: WriteSignal<ViewModel>) {
-    match effect {
-        Effect::Render(_) => {
-            render.update(|view| *view = app.core.view());
-        }
-        Effect::Geolocation(req) => process_geolocation(app, req),
-    };
-}
+impl Backend {
+    /// Process an effect from the core.
+    pub fn process_effect(self: &Rc<Self>, effect: Effect) {
+        match effect {
+            Effect::Render(_) => {
+                self.render.set(self.core.view());
+            }
+            Effect::Geolocation(req) => self.process_geolocation(req),
+        };
+    }
 
-fn process_geolocation(app: &App, request: Request<GeoRequest>) {
-    match &request.operation {
-        GeoRequest::GetCurrentPosition(opts) => {
-            todo!();
-        }
-        GeoRequest::WatchPosition(opts) => {
-            todo!();
-        }
-        GeoRequest::ClearWatch(_) => {
-            todo!();
+    /// Process a geolocation request from the core.
+    fn process_geolocation(self: &Rc<Self>, request: Request<GeoRequest>) {
+        match request.operation {
+            GeoRequest::WatchPosition(opts) => {
+                let mut geo_watch = self.geo_watch.borrow_mut();
+                if let Some(geo_watch) = geo_watch.take() {
+                    geo_watch.stop_watch();
+                }
+                *geo_watch = Some(GeoWatch::watch(self.clone(), request, opts));
+            }
+            GeoRequest::ClearWatch => {
+                if let Some(geo_watch) = self.geo_watch.borrow_mut().take() {
+                    geo_watch.stop_watch();
+                }
+            }
         }
     }
-}
-
-/// Convert a `GeoOptions` struct from `crux_geolocation` to a similar "options struct" used by
-/// `leptos_use`.
-fn convert_geo_options(opts: GeoOptions) -> UseGeolocationOptions {
-    UseGeolocationOptions::default()
-        .immediate(false)
-        .enable_high_accuracy(opts.enable_high_accuracy)
-        .maximum_age(opts.maximum_age.try_into().unwrap_or(u32::MAX))
-        .timeout(
-            opts.timeout
-                .unwrap_or(u64::MAX)
-                .try_into()
-                .unwrap_or(u32::MAX),
-        )
 }

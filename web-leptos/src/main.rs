@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 mod core;
 
+use core::App;
 use std::fmt;
 use std::hash::{DefaultHasher, Hash};
 
@@ -9,26 +10,19 @@ use shared::{view_types::ViewModel, Event};
 
 #[component]
 fn RootComponent() -> impl IntoView {
-    let app = core::new_app();
-    let (view, render) = create_signal(app.core.view());
-    let (event, set_event) = create_signal(Event::StartGeolocation);
-
-    create_effect(move |_| {
-        core::update(&app, event.get(), render);
-    });
-
+    let app = App::new();
     html::div().child((
-        curr_pos_component(view),
-        list_saved_positions(view),
-        save_pos_component(set_event),
+        curr_pos_component(app),
+        list_saved_positions(app),
+        save_pos_component(app),
     ))
 }
 
-fn curr_pos_component(view: ReadSignal<ViewModel>) -> impl IntoView {
+fn curr_pos_component(app: App) -> impl IntoView {
     html::div().child((
         html::h3().child("Current Position"),
         html::p().child(move || {
-            let view = view.get();
+            let view = app.view.get();
             (
                 format!("status: {}", view.gps_status),
                 view.curr_pos.as_ref().map(|pos| {
@@ -45,12 +39,12 @@ fn curr_pos_component(view: ReadSignal<ViewModel>) -> impl IntoView {
     ))
 }
 
-fn list_saved_positions(view: ReadSignal<ViewModel>) -> impl IntoView {
+fn list_saved_positions(app: App) -> impl IntoView {
     html::div().child((
         html::h3().child("Near Positions"),
-        html::p().child(move || format!("{} saved positions", view.get().near_positions.len())),
+        html::p().child(move || format!("{} saved positions", app.view.get().near_positions.len())),
         leptos::For(leptos::ForProps {
-            each: move || view.get().near_positions,
+            each: move || app.view.get().near_positions,
             key: |x| x.hash(&mut DefaultHasher::new()),
             children: |x| {
                 format!(
@@ -62,7 +56,7 @@ fn list_saved_positions(view: ReadSignal<ViewModel>) -> impl IntoView {
     ))
 }
 
-fn save_pos_component(set_event: WriteSignal<Event>) -> impl IntoView {
+fn save_pos_component(app: App) -> impl IntoView {
     let (save_pos_dialog, set_save_pos_dialog) = create_signal(false);
     let input_node = create_node_ref();
     move || {
@@ -86,7 +80,7 @@ fn save_pos_component(set_event: WriteSignal<Event>) -> impl IntoView {
                         .get()
                         .expect("Input element should be initialized.")
                         .value();
-                    set_event.set(Event::SaveCurrPos(name.into()));
+                    app.set_event.set(Event::SaveCurrPos(name.into()));
                     set_save_pos_dialog.set(false);
                 })
                 .into_any()

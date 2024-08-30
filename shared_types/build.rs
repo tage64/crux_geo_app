@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use crux_core::typegen::TypeGen;
-use shared::Counter;
+use shared::GeoApp;
 
 fn main() -> anyhow::Result<()> {
     println!("cargo:rerun-if-changed=../shared");
 
     let mut gen = TypeGen::new();
 
-    gen.register_app::<Counter>()?;
+    gen.register_app::<GeoApp>()?;
 
     let output_root = PathBuf::from("./generated");
 
