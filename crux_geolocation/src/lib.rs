@@ -31,7 +31,7 @@ pub struct Position {
 }
 
 /// Options when retrieving a position.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeoOptions {
     /// A positive value indicating the maximum age in milliseconds of a possible cached
@@ -56,7 +56,7 @@ pub struct GeoOptions {
 }
 
 /// A position operation.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GeoRequest {
     WatchPosition(GeoOptions),
