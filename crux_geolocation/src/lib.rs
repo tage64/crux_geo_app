@@ -72,8 +72,8 @@ pub enum GeoRequest {
 pub enum GeoError {
     #[display("Permission denied")]
     PermissionDenied = 1,
-    #[display("Position unavaillable")]
-    PositionUnavaillable = 2,
+    #[display("Position unavailable")]
+    PositionUnavailable = 2,
     /// The time allowed to acquire the position was reached before the information was obtained.
     #[display("Position retrieval timed out")]
     Timeout = 3,
@@ -91,7 +91,7 @@ pub enum GeoResponse {
         timestamp: i64,
     },
     PermissionDeniedError,
-    PositionUnavaillableError,
+    PositionUnavailableError,
     TimeoutError,
 }
 
@@ -248,7 +248,7 @@ fn response_to_geo_info(response: GeoResponse) -> GeoResult<GeoInfo> {
             volocity: volocity.map(Speed::from_metres_per_second),
         }),
         GeoResponse::PermissionDeniedError => Err(GeoError::PermissionDenied),
-        GeoResponse::PositionUnavaillableError => Err(GeoError::PositionUnavaillable),
+        GeoResponse::PositionUnavailableError => Err(GeoError::PositionUnavailable),
         GeoResponse::TimeoutError => Err(GeoError::Timeout),
     }
 }
