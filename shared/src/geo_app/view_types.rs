@@ -10,6 +10,11 @@ use smallvec::SmallVec;
 
 use super::SavedPos;
 
+/// Precition for latitude and longitude.
+const COORD_PRECITION: usize = 5;
+/// Precition for altitude, volocity and other things.
+const PRECITION: usize = 1;
+
 /// Information about a position.
 ///
 /// The information fields are represented by strings, including the value and the unit but not the
@@ -30,14 +35,17 @@ pub struct ViewPos {
 
 impl SavedPos {
     pub fn view(&self) -> ViewPos {
-        let rounded_coords = self.coords.round_d5(); // Meter precition.
+        let latitude = self.coords.latitude().as_degrees();
+        let longitude = self.coords.longitude().as_degrees();
+        let north_south = if latitude >= 0.0 { "North" } else { "South" };
+        let east_west = if longitude >= 0.0 { "East" } else { "West" };
         ViewPos {
             name: self.name.clone(),
-            latitude: format_compact!("{}°", rounded_coords.latitude().as_degrees()),
-            longitude: format_compact!("{}°", rounded_coords.longitude().as_degrees()),
+            latitude: format_compact!("{:.*}° {}", COORD_PRECITION, latitude, north_south),
+            longitude: format_compact!("{:.*}° {}", COORD_PRECITION, longitude, east_west,),
             altitude: self
                 .altitude
-                .map(|x| format_compact!("{} m", x.as_metres())),
+                .map(|x| format_compact!("{:.*} meters", PRECITION, x.as_metres())),
             timestamp: self
                 .timestamp
                 .with_timezone(&Local)
@@ -61,8 +69,10 @@ impl ViewVolocity {
     pub fn new(geo: &GeoInfo) -> Option<Self> {
         if let Some(volocity) = geo.volocity {
             Some(Self {
-                volocity: format_compact!("{} m/s", volocity.as_metres_per_second()),
-                bearing: geo.bearing.map(|x| format_compact!("{}°", x.as_degrees())),
+                volocity: format_compact!("{:.*} m/s", PRECITION, volocity.as_metres_per_second()),
+                bearing: geo
+                    .bearing
+                    .map(|x| format_compact!("{}°", x.as_degrees().round())),
             })
         } else {
             None
