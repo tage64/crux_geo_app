@@ -6,7 +6,8 @@ members = [ "crux_geolocation","shared", "shared_types", "web-leptos"]
 authors = ["Tage Johansson"]
 edition = "2021"
 #repository = "https://github.com/redbadger/crux/"
-license = "GPL-3.0-or-later"
+license = "AGPL-3.0-or-later"
+license-file = "LICENSE"
 keywords = ["crux", "crux_core", "cross-platform-ui", "ffi", "wasm"]
 
 [workspace.dependencies]
