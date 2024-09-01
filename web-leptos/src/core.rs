@@ -1,12 +1,16 @@
 #![allow(unused_variables, dead_code)]
 mod geolocation;
+mod storage;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use chrono::Utc;
 use crux_geolocation::{GeoOptions, GeoRequest};
+use crux_kv::{value::Value, KeyValueOperation, KeyValueResponse, KeyValueResult};
+use crux_time::{TimeRequest, TimeResponse};
 use geolocation::GeoWatch;
-use leptos::create_effect;
 use leptos::signal_prelude::*;
+use leptos::watch;
 use shared::{view_types::ViewModel, Effect, Event, GeoApp, Request};
 
 /// Signals to send events to and get the last view model from the app.
@@ -41,24 +45,111 @@ impl App {
             event,
             geo_watch: RefCell::new(None),
         });
-        create_effect(move |_| {
-            for effect in backend.core.process_event(backend.event.get()) {
-                backend.process_effect(effect);
-            }
-        });
+        let _ = watch(
+            move || event.get(),
+            move |event, _, _| {
+                let effects = backend.core.process_event(event.clone());
+                backend.process_effects(effects);
+                // For some very strange reason, the geolocation service stops after this, so we
+                // need to restart it.
+                if backend.geo_watch.borrow().is_some() {
+                    let effects = backend.core.process_event(Event::StartGeolocation);
+                    backend.process_effects(effects);
+                }
+            },
+            true,
+        );
+        set_event.set(Event::LoadSavedPositions);
         Self { view, set_event }
     }
 }
 
 impl Backend {
-    /// Process an effect from the core.
-    pub fn process_effect(self: &Rc<Self>, effect: Effect) {
-        match effect {
-            Effect::Render(_) => {
-                self.render.set(self.core.view());
+    /// Process a bunch of effects from the core.
+    pub fn process_effects(self: &Rc<Self>, effects: impl IntoIterator<Item = Effect>) {
+        for effect in effects {
+            match effect {
+                Effect::Render(_) => {
+                    self.render.set(self.core.view());
+                }
+                Effect::Time(req) => self.clone().process_time(req),
+                Effect::KeyValue(req) => self.process_storage(req),
+                Effect::Geolocation(req) => self.process_geolocation(req),
             }
-            Effect::Geolocation(req) => self.process_geolocation(req),
-        };
+        }
+    }
+
+    /// Process a time request from the core.
+    fn process_time(self: Rc<Self>, mut request: Request<TimeRequest>) {
+        match request.operation {
+            TimeRequest::Now => {
+                let response = TimeResponse::Now(Utc::now().try_into().unwrap());
+                self.process_effects(self.core.resolve(&mut request, response));
+            }
+            TimeRequest::NotifyAfter(duration) => leptos::set_timeout(
+                move || {
+                    self.process_effects(
+                        self.core
+                            .resolve(&mut request, TimeResponse::DurationElapsed),
+                    )
+                },
+                TryInto::<chrono::TimeDelta>::try_into(duration)
+                    .unwrap()
+                    .to_std()
+                    .unwrap(),
+            ),
+            TimeRequest::NotifyAt(duration) => leptos::set_timeout(
+                move || {
+                    self.process_effects(
+                        self.core
+                            .resolve(&mut request, TimeResponse::DurationElapsed),
+                    )
+                },
+                (TryInto::<chrono::DateTime<Utc>>::try_into(duration).unwrap() - Utc::now())
+                    .to_std()
+                    .unwrap_or(std::time::Duration::ZERO),
+            ),
+        }
+    }
+
+    /// Handle persistant storage operations.
+    fn process_storage(self: &Rc<Self>, mut request: Request<KeyValueOperation>) {
+        match request.operation.clone() {
+            KeyValueOperation::Get { key } => {
+                let val = storage::get(key);
+                let value = val.map(Value::Bytes).unwrap_or(Value::None);
+                let response = KeyValueResult::Ok {
+                    response: KeyValueResponse::Get { value },
+                };
+                self.process_effects(self.core.resolve(&mut request, response));
+            }
+            KeyValueOperation::Set { key, value } => {
+                storage::set(key, value);
+                let response = KeyValueResult::Ok {
+                    response: KeyValueResponse::Set {
+                        previous: Value::None,
+                    },
+                };
+                self.process_effects(self.core.resolve(&mut request, response));
+            }
+            KeyValueOperation::Delete { key } => {
+                storage::delete(key);
+                let response = KeyValueResult::Ok {
+                    response: KeyValueResponse::Delete {
+                        previous: Value::None,
+                    },
+                };
+                self.process_effects(self.core.resolve(&mut request, response));
+            }
+            KeyValueOperation::Exists { key } => {
+                let is_present = storage::get(key).is_some();
+                let response = KeyValueResult::Ok {
+                    response: KeyValueResponse::Exists { is_present },
+                };
+                self.process_effects(self.core.resolve(&mut request, response));
+            }
+            KeyValueOperation::ListKeys { .. } => unimplemented!(),
+        }
     }
 
     /// Process a geolocation request from the core.

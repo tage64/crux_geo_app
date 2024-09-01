@@ -200,6 +200,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
 
 [[package]]
+name = "build-time"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1219c19fc29b7bfd74b7968b420aff5bc951cf517800176e795d6b2300dd382"
+dependencies = [
+ "chrono",
+ "once_cell",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.75",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -283,6 +296,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-targets",
 ]
@@ -355,6 +369,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
 
 [[package]]
+name = "codee"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d3ad3122b0001c7f140cf4d605ef9a9e2c24d96ab0b4fb4347b76de2425f445"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "collection_literals"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -393,6 +416,16 @@ dependencies = [
  "pathdiff",
  "serde",
  "toml 0.8.19",
+]
+
+[[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -484,6 +517,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "crux_kv"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09a8b84295843909d70529ecb247505f5184a64750b2c07e691967163743e125"
+dependencies = [
+ "anyhow",
+ "crux_core",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "crux_macros"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -494,6 +539,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.75",
+]
+
+[[package]]
+name = "crux_time"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ea070ec8412b91ac2f93fb05d8e9f20dc9a1de62d9424de30f01909a2ca4a32"
+dependencies = [
+ "chrono",
+ "crux_core",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]
@@ -971,9 +1028,11 @@ checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 
 [[package]]
 name = "jord"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20f891ab11c1fd88ce295f836532f9597ad884954c8118ad70434488ca7d4da8"
+version = "0.15.0"
+source = "git+https://github.com/ofmooseandmen/jord-rs#a1b9d5ef4aacbddc62d1f986ae9834c352e557ad"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "js-sys"
@@ -1017,6 +1076,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fbd7025172d634eed266a57bd45c7bf872562e97e5768c543d69b6e907c4b86"
 dependencies = [
  "cfg-if",
+ "codee",
  "default-struct-builder",
  "js-sys",
  "lazy_static",
@@ -1599,6 +1659,7 @@ checksum = "133315eb94c7b1e8d0cb097e5a710d850263372fd028fff18969de708afc7008"
 dependencies = [
  "heapless",
  "num-traits",
+ "serde",
  "smallvec",
 ]
 
@@ -1838,25 +1899,19 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "chrono",
  "compact_str",
  "crux_core",
  "crux_geolocation",
+ "crux_kv",
+ "crux_time",
  "jord",
  "rstar",
  "serde",
  "smallvec",
  "uniffi",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "shared_types"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crux_core",
- "shared",
 ]
 
 [[package]]
@@ -2428,7 +2483,14 @@ dependencies = [
 name = "web-leptos"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "build-time",
+ "chrono",
+ "codee",
+ "console_error_panic_hook",
  "crux_geolocation",
+ "crux_kv",
+ "crux_time",
  "leptos",
  "leptos-use",
  "shared",

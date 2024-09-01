@@ -8,7 +8,7 @@ use crux_geolocation::GeoInfo;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-use super::SavedPos;
+use super::{Model, SavedPos};
 
 /// Precition for latitude and longitude.
 const COORD_PRECITION: usize = 5;
@@ -92,4 +92,72 @@ pub struct ViewModel {
     pub gps_status: CompactString,
     /// Near saved positions.
     pub near_positions: SmallVec<[ViewPos; 10]>,
+    /// A message that should be displayed to the user.
+    pub msg: Option<CompactString>,
+}
+
+impl ViewModel {
+    pub fn new(model: &Model) -> Self {
+        let curr_pos = if let Some(Ok(geo)) = &model.curr_pos {
+            Some(SavedPos::new("Current position".into(), geo))
+        } else {
+            None
+        };
+        let gps_status = match &model.curr_pos {
+            None => "No GPS information".into(),
+            Some(Err(e)) => format_compact!("GPS Error: {}", e),
+            Some(Ok(GeoInfo {
+                accuracy,
+                altitude_accuracy,
+                ..
+            })) => {
+                let mut text = CompactString::new("");
+                if let Some(a) = accuracy {
+                    text += &format_compact!("Accuracy: {:.*} m, ", PRECITION, a.as_metres());
+                }
+                if let Some(aa) = altitude_accuracy {
+                    text +=
+                        &format_compact!("Altitude accuracy: {:.*} m, ", PRECITION, aa.as_metres());
+                }
+                let positions_in_last_minute = if let Some(curr_time) = model.curr_time {
+                    model
+                        .all_positions
+                        .range(curr_time - chrono::TimeDelta::minutes(1)..)
+                        .count()
+                } else {
+                    0
+                };
+                text +=
+                    &format_compact!("{} positions in the last minute.", positions_in_last_minute);
+                text
+            }
+        };
+        let near_positions = if let Some(curr_pos) = &curr_pos {
+            model
+                .saved_positions
+                .nearest_neighbor_iter(&curr_pos.rtree_point())
+                .take(10)
+                .map(|x| x.view())
+                .collect::<SmallVec<[_; 10]>>()
+        } else {
+            SmallVec::new()
+        };
+        Self {
+            curr_pos: curr_pos.map(|x| x.view()),
+            volocity: model
+                .curr_pos
+                .as_ref()
+                .map(|x| x.as_ref().ok())
+                .flatten()
+                .map(|x| ViewVolocity::new(x))
+                .flatten(),
+            near_positions,
+            gps_status,
+            msg: if model.msg.is_empty() {
+                None
+            } else {
+                Some(model.msg.clone())
+            },
+        }
+    }
 }

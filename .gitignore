@@ -2,6 +2,7 @@
 /.bin/
 /shared_types/generated
 /web-leptos/dist
+/web-leptos/index.html
 
 ## Relative Files and Directories
 target/

@@ -3,9 +3,10 @@ use compact_str::CompactString;
 use crux_geolocation::GeoInfo;
 use jord::{LatLong, Length};
 use rstar::{PointDistance, RTreeObject, AABB};
+use serde::{Deserialize, Serialize};
 
 /// A saved position.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedPos {
     pub name: CompactString,
     pub coords: LatLong,

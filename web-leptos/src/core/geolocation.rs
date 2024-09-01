@@ -8,7 +8,7 @@ use crux_geolocation::{GeoOptions, GeoRequest, GeoResponse, Position};
 use leptos::signal_prelude::*;
 use leptos::{create_effect, web_sys, Effect};
 use leptos_use::{use_geolocation_with_options, UseGeolocationOptions, UseGeolocationReturn};
-use shared::Request;
+use shared::{Event, Request};
 
 use super::Backend;
 
@@ -16,7 +16,6 @@ use super::Backend;
 pub struct GeoWatch {
     /// Function to stop the watch.
     stop_fn: Box<dyn FnOnce()>,
-    /// Function to stop watching to the signals.
     effect: Effect<()>,
 }
 
@@ -40,16 +39,14 @@ impl GeoWatch {
                 convert_error(err)
             } else {
                 let (Some(coords), Some(timestamp)) = (coords, timestamp) else {
-                    return ();
+                    return;
                 };
                 convert_position(coords, timestamp)
             };
-            let effs = backend
+            let effects = backend
                 .core
                 .resolve(&mut request.borrow_mut(), geo_response);
-            for eff in effs {
-                backend.process_effect(eff);
-            }
+            backend.process_effects(effects);
         });
 
         Self {

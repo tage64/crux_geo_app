@@ -1,6 +1,7 @@
 [workspace]
 resolver = "1"
-members = [ "crux_geolocation","shared", "shared_types", "web-leptos"]
+members = [ "crux_geolocation", "shared", "web-leptos"]
+# TODO: Add shared_types as a member when typegen works with rust_kv.
 
 [workspace.package]
 authors = ["Tage Johansson"]
@@ -11,8 +12,9 @@ license-file = "LICENSE"
 keywords = ["crux", "crux_core", "cross-platform-ui", "ffi", "wasm"]
 
 [workspace.dependencies]
-anyhow = "1.0.86"
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["serde"] }
 crux_core = "0.8.1"
-jord = "0.14.0"
+crux_kv = "0.4.2"
+crux_time = { version = "0.4.4", features = ["chrono"] }
+jord = { git = "https://github.com/ofmooseandmen/jord-rs", version = "0.15.0", features = ["serde"] }
 serde = { version = "1.0.209", features = ["derive"] }
