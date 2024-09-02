@@ -7,7 +7,10 @@ use std::hash::{DefaultHasher, Hash};
 use std::rc::Rc;
 
 use build_time::build_time_local;
-use leptos::{component, create_effect, create_node_ref, ev, html, signal_prelude::*, IntoView};
+use leptos::{
+    component, create_effect, create_node_ref, ev, event_target, html, signal_prelude::*, web_sys,
+    IntoView,
+};
 use shared::{view_types::ViewModel, Event};
 
 #[component]
@@ -46,23 +49,33 @@ fn curr_pos_component(app: App) -> impl IntoView {
 }
 
 fn list_saved_positions(app: App) -> impl IntoView {
-    html::div().child((
-        html::h3().child("Near Positions"),
-        html::p().child(move || format!("{} saved positions", app.view.get().near_positions.len())),
-        html::ol().child(move || {
-            app.view
-                .get()
-                .near_positions
-                .into_iter()
-                .map(|x| {
-                    html::li().child(format!(
-                        "{}: {}, {}, {}",
-                        x.name, x.latitude, x.longitude, x.timestamp
-                    ))
-                })
-                .collect::<Vec<_>>()
-        }),
-    ))
+    let no_saved_positions = create_memo(move |_| app.view.get().saved_positions.len());
+    html::details()
+        .on(ev::toggle, move |ev| {
+            let is_open = event_target::<web_sys::HtmlDetailsElement>(&ev).open();
+            app.set_event
+                .set(Event::ViewNSavedPositions(if is_open { 10 } else { 0 }));
+        })
+        .child((
+            html::summary().child("Nearest Saved positions"),
+            move || {
+                (0..no_saved_positions.get())
+                    .into_iter()
+                    .map(|i| {
+                        html::details().child(move || {
+                            let pos = &app.view.get().saved_positions[i];
+                            (
+                                html::summary().child(pos.summary.to_string()),
+                                pos.properties
+                                    .iter()
+                                    .map(|x| (x.to_string(), html::br()))
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            },
+        ))
 }
 
 fn save_pos_component(app: App) -> impl IntoView {
@@ -108,7 +121,7 @@ fn show_msg_component(app: App) -> impl IntoView {
         html::hr(),
         html::p().attr("role", "alert").child(move || {
             let view = app.view.get();
-            if let Some(msg) = view.msg {
+            if let Some(msg) = &view.msg {
                 msg.to_string()
             } else {
                 String::new()

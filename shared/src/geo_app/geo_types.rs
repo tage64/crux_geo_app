@@ -27,12 +27,6 @@ impl SavedPos {
             timestamp: geo.timestamp,
         }
     }
-
-    /// Get a point passed to `RTree`.
-    pub fn rtree_point(&self) -> [f64; 3] {
-        let nvec = self.coords.to_nvector().as_vec3();
-        [nvec.x(), nvec.y(), nvec.z()]
-    }
 }
 
 /// We implement RTreeObject for a position on the Earth's surface. (Ignoring altitude.)
@@ -48,14 +42,20 @@ impl SavedPos {
 impl RTreeObject for SavedPos {
     type Envelope = AABB<[f64; 3]>;
     fn envelope(&self) -> Self::Envelope {
-        AABB::from_point(self.rtree_point())
+        AABB::from_point(rtree_point(self.coords))
     }
 }
 
 impl PointDistance for SavedPos {
     fn distance_2(&self, point: &[f64; 3]) -> f64 {
-        let me = self.rtree_point();
+        let me = rtree_point(self.coords);
         let [x, y, z] = [me[0] - point[0], me[1] - point[1], me[2] - point[2]];
         return x * x + y * y + z * z;
     }
+}
+
+/// Get a point passed to `RTree`.
+pub fn rtree_point(coords: LatLong) -> [f64; 3] {
+    let nvec = coords.to_nvector().as_vec3();
+    [nvec.x(), nvec.y(), nvec.z()]
 }

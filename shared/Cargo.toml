@@ -11,6 +11,7 @@ name = "shared"
 typegen = ["crux_core/typegen"]
 
 [dependencies]
+arrayvec = { version = "0.7.6", features = ["serde"] }
 bincode = "1.3.3"
 chrono.workspace = true
 compact_str = { version = "0.8.0", features = ["serde"] }
@@ -21,7 +22,6 @@ crux_time.workspace = true
 jord.workspace = true
 rstar = { version = "0.12.0", features = ["serde"] }
 serde.workspace = true
-smallvec = { version = "1.13.2", features = ["serde"] }
 uniffi = { version = "0.28.1", features = ["build", "cli"] }
 wasm-bindgen = "0.2.93"
 

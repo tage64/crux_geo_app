@@ -2,27 +2,26 @@
 //!
 //! The general theme is that these types formats numbers and units to strings so that the UI don't
 //! have to bother with that.
-use chrono::Local;
+use arrayvec::ArrayVec;
+use chrono::prelude::*;
 use compact_str::{format_compact, CompactString, ToCompactString};
 use crux_geolocation::GeoInfo;
+use jord::{spherical::Sphere, LatLong, Length};
 use serde::{Deserialize, Serialize};
-use smallvec::SmallVec;
 
-use super::{Model, SavedPos};
+use super::{Model, SavedPos, PLANET};
 
 /// Precition for latitude and longitude.
 const COORD_PRECITION: usize = 5;
 /// Precition for altitude, volocity and other things.
 const PRECITION: usize = 1;
 
-/// Information about a position.
+/// Basic information about a position.
 ///
 /// The information fields are represented by strings, including the value and the unit but not the
 /// name. E.g. "59.265358° North", but the name "Latitude: " is not included.
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewPos {
-    /// The name of a saved position or some dedicated string for the current position.
-    pub name: CompactString,
     /// The latitude in decimal degrees.
     pub latitude: CompactString,
     /// The longitude in decimal degrees.
@@ -33,24 +32,67 @@ pub struct ViewPos {
     pub timestamp: CompactString,
 }
 
-impl SavedPos {
-    pub fn view(&self) -> ViewPos {
-        let latitude = self.coords.latitude().as_degrees();
-        let longitude = self.coords.longitude().as_degrees();
+/// Information about a named position.
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
+pub struct ViewNamedPos {
+    /// The name and (if it does exist) a distance and direction.
+    pub summary: CompactString,
+    /// A number of properties, like latitude and timestamp.
+    pub properties: ArrayVec<CompactString, 4>,
+}
+
+impl ViewPos {
+    pub fn new(coords: LatLong, altitude: Option<Length>, timestamp: DateTime<Utc>) -> Self {
+        let latitude = coords.latitude().as_degrees();
+        let longitude = coords.longitude().as_degrees();
         let north_south = if latitude >= 0.0 { "North" } else { "South" };
         let east_west = if longitude >= 0.0 { "East" } else { "West" };
-        ViewPos {
-            name: self.name.clone(),
+        Self {
             latitude: format_compact!("{:.*}° {}", COORD_PRECITION, latitude, north_south),
             longitude: format_compact!("{:.*}° {}", COORD_PRECITION, longitude, east_west,),
-            altitude: self
-                .altitude
-                .map(|x| format_compact!("{:.*} meters", PRECITION, x.as_metres())),
-            timestamp: self
-                .timestamp
+            altitude: altitude.map(|x| format_compact!("{:.*} meters", PRECITION, x.as_metres())),
+            timestamp: timestamp
                 .with_timezone(&Local)
                 .format("%a %b %e %T %Y")
                 .to_compact_string(),
+        }
+    }
+}
+
+impl ViewNamedPos {
+    fn new(pos: SavedPos, curr_pos: Option<LatLong>) -> Self {
+        let summary = if let Some(curr_coords) = curr_pos {
+            format_compact!(
+                "{}: {} m, {}°",
+                pos.name,
+                PLANET
+                    .distance(curr_coords.to_nvector(), pos.coords.to_nvector())
+                    .as_metres()
+                    .round(),
+                Sphere::initial_bearing(curr_coords.to_nvector(), pos.coords.to_nvector())
+                    .as_degrees()
+                    .round()
+            )
+        } else {
+            pos.name
+        };
+
+        let ViewPos {
+            latitude,
+            longitude,
+            altitude,
+            timestamp,
+        } = ViewPos::new(pos.coords, pos.altitude, pos.timestamp);
+        let mut properties = ArrayVec::new();
+        properties.push(format_compact!("Latitude: {latitude}"));
+        properties.push(format_compact!("Longitude: {longitude}"));
+        if let Some(altitude) = altitude {
+            properties.push(format_compact!("Altitude: {altitude}"));
+        }
+        properties.push(format_compact!("Saved at: {timestamp}"));
+        Self {
+            summary,
+            properties,
         }
     }
 }
@@ -90,19 +132,14 @@ pub struct ViewModel {
     /// Information about the GPS status. May display an error, especially if current_pos is
     /// `None`. Otherwise it should display accuracy and such.
     pub gps_status: CompactString,
-    /// Near saved positions.
-    pub near_positions: SmallVec<[ViewPos; 10]>,
+    /// Saved positions to show.
+    pub saved_positions: Vec<ViewNamedPos>,
     /// A message that should be displayed to the user.
     pub msg: Option<CompactString>,
 }
 
 impl ViewModel {
     pub fn new(model: &Model) -> Self {
-        let curr_pos = if let Some(Ok(geo)) = &model.curr_pos {
-            Some(SavedPos::new("Current position".into(), geo))
-        } else {
-            None
-        };
         let gps_status = match &model.curr_pos {
             None => "No GPS information".into(),
             Some(Err(e)) => format_compact!("GPS Error: {}", e),
@@ -132,26 +169,17 @@ impl ViewModel {
                 text
             }
         };
-        let near_positions = if let Some(curr_pos) = &curr_pos {
-            model
-                .saved_positions
-                .nearest_neighbor_iter(&curr_pos.rtree_point())
-                .take(10)
-                .map(|x| x.view())
-                .collect::<SmallVec<[_; 10]>>()
-        } else {
-            SmallVec::new()
-        };
+        let curr_pos: Option<&GeoInfo> = model.curr_pos.as_ref().map(|x| x.as_ref().ok()).flatten();
+        let saved_positions = model
+            .view_saved_positions
+            .clone()
+            .into_iter()
+            .map(|p| ViewNamedPos::new(p, curr_pos.map(|x| x.coords)))
+            .collect();
         Self {
-            curr_pos: curr_pos.map(|x| x.view()),
-            volocity: model
-                .curr_pos
-                .as_ref()
-                .map(|x| x.as_ref().ok())
-                .flatten()
-                .map(|x| ViewVolocity::new(x))
-                .flatten(),
-            near_positions,
+            volocity: curr_pos.map(ViewVolocity::new).flatten(),
+            curr_pos: curr_pos.map(|p| ViewPos::new(p.coords, p.altitude, p.timestamp)),
+            saved_positions,
             gps_status,
             msg: if model.msg.is_empty() {
                 None

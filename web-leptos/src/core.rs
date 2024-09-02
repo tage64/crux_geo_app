@@ -17,7 +17,7 @@ use shared::{view_types::ViewModel, Effect, Event, GeoApp, Request};
 #[derive(Clone, Copy)]
 pub struct App {
     /// Signal to receive the latest view model.
-    pub view: ReadSignal<ViewModel>,
+    pub view: ReadSignal<Rc<ViewModel>>,
     /// Signal to send events to the app.
     pub set_event: WriteSignal<Event>,
 }
@@ -27,7 +27,7 @@ struct Backend {
     /// The core of the app.
     core: shared::Core<Effect, GeoApp>,
     /// Signal where new view models are sent from the core.
-    render: WriteSignal<ViewModel>,
+    render: WriteSignal<Rc<ViewModel>>,
     /// Signal to receive events that should be sent to the core.
     event: ReadSignal<Event>,
     /// A possible current watch on the geolocation API.
@@ -37,7 +37,7 @@ struct Backend {
 impl App {
     pub fn new() -> Self {
         let core = shared::Core::new();
-        let (view, render) = create_signal(core.view());
+        let (view, render) = create_signal(Rc::new(core.view()));
         let (event, set_event) = create_signal(Event::StartGeolocation);
         let backend = Rc::new(Backend {
             core,
@@ -70,7 +70,7 @@ impl Backend {
         for effect in effects {
             match effect {
                 Effect::Render(_) => {
-                    self.render.set(self.core.view());
+                    self.render.set(Rc::new(self.core.view()));
                 }
                 Effect::Time(req) => self.clone().process_time(req),
                 Effect::KeyValue(req) => self.process_storage(req),
