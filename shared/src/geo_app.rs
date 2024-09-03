@@ -1,6 +1,5 @@
 mod geo_types;
 pub mod view_types;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -10,8 +9,7 @@ use crux_core::{render::Render, App};
 use crux_geolocation::{GeoInfo, GeoOptions, GeoResult, Geolocation};
 use crux_kv::{error::KeyValueError, KeyValue};
 use crux_time::{Time, TimeResponse};
-use geo_types::rtree_point;
-pub use geo_types::SavedPos;
+use geo_types::{rtree_point, Position, RecordedWay, SavedPos, Way};
 use jord::spherical::Sphere;
 use rstar::RTree;
 use serde::{Deserialize, Serialize};
@@ -28,21 +26,25 @@ pub enum Event {
     /// Stop geolocation services.
     StopGeolocation,
 
-    // Saved Positions
-    /// Load saved positions from persistant storage.
-    LoadSavedPositions,
-    /// Save the current position with a name.
-    SaveCurrPos(CompactString),
-    /// Set saved positions from persistant storage.
+    // Persistant Data
+    /// Load Persistant Data.
+    LoadPersistantData,
+    /// Set data from persistant storage.
     #[serde(skip)]
-    SetSavedPositions {
+    SetData {
         res: Result<Option<Vec<u8>>, KeyValueError>,
         key: CompactString,
     },
+
+    // Saved Positions and Ways
+    /// Save the current position with a name.
+    SaveCurrPos(CompactString),
     /// Delete a saved position by its name.
     DelSavedPos(CompactString),
     /// View the n nearest saved positions. To hide all, set this to 0.
     ViewNSavedPositions(usize),
+    /// Save the way since the app started.
+    SaveAllPositions(CompactString),
 
     // Time
     /// Tell that `Model::curr_time` should be updated.
@@ -72,11 +74,19 @@ const GEOLOCATION_OPTIONS: GeoOptions = GeoOptions {
 
 /// Key when saving saved positions in persistant storage.
 const SAVED_POSITIONS_KEY: &str = "saved_positions";
+/// Key when saving ways.
+const SAVED_WAYS_KEY: &str = "saved_ways";
 
 #[derive(Default)]
 pub struct Model {
     /// The most recently received position.
     curr_pos: Option<GeoResult<GeoInfo>>,
+
+    // Recorded Ways
+    /// All positions since the app was started.
+    all_positions: Option<RecordedWay>,
+    /// Saved ways and their names.
+    saved_ways: HashMap<CompactString, Way>,
 
     // Saved Positions
     /// An r-tree with all saved positions.
@@ -90,8 +100,6 @@ pub struct Model {
     /// A message that should be viewed to the user.
     msg: CompactString,
 
-    /// A by timestamp sorted list of all watched positions.
-    all_positions: BTreeMap<chrono::DateTime<Utc>, GeoInfo>,
     /// The current time minus at most `UPDATE_CURR_TIME_AFTER`. Only availlable after the first
     /// call to `Event::StartGeolocation`.
     curr_time: Option<DateTime<Utc>>,
@@ -128,39 +136,26 @@ impl App for GeoApp {
             Event::GeolocationUpdate(geo_result) => {
                 model.curr_pos = Some(geo_result.clone());
                 if let Ok(geo_info) = geo_result {
-                    model.all_positions.insert(geo_info.timestamp, geo_info);
+                    if let Some(rec) = &mut model.all_positions {
+                        rec.push(Position::new(&geo_info));
+                    } else {
+                        model.all_positions = Some(RecordedWay::start(Position::new(&geo_info)));
+                    }
+                }
+            }
+
+            // Persistant Data
+            Event::LoadPersistantData => {
+                self.load_persistant_data(caps, SAVED_POSITIONS_KEY);
+                self.load_persistant_data(caps, SAVED_WAYS_KEY);
+            }
+            Event::SetData { res, key } => {
+                if let Err(e) = self.set_data(model, caps, res, key) {
+                    model.msg = e;
                 }
             }
 
             // Saved Positions
-            Event::LoadSavedPositions => caps.storage.get(SAVED_POSITIONS_KEY.to_string(), |res| {
-                Event::SetSavedPositions {
-                    res,
-                    key: SAVED_POSITIONS_KEY.to_compact_string(),
-                }
-            }),
-            Event::SetSavedPositions { res, key } => match res {
-                Ok(Some(bytes)) => match bincode::deserialize(bytes.as_slice()) {
-                    Ok((rtree, names)) => {
-                        model.saved_positions = rtree;
-                        model.saved_positions_names = names;
-                        model.msg = format_compact!(
-                            "Successfully loaded {} saved positions.",
-                            model.saved_positions_names.len(),
-                        )
-                    }
-                    Err(e) => {
-                        model.msg = format_compact!(
-                            "Browser Error: Error while decoding saved_positions: {e}"
-                        )
-                    }
-                },
-                Ok(None) => model.msg = format_compact!("No saved positions found."),
-                Err(e) => {
-                    model.msg =
-                        format_compact!("Internal Error: When retrieving saved_positions: {e}")
-                }
-            },
             Event::SaveCurrPos(name) => {
                 if let Some(Ok(geo)) = &model.curr_pos {
                     if model.saved_positions_names.contains_key(&name) {
@@ -170,6 +165,8 @@ impl App for GeoApp {
                         let pos = SavedPos::new(name.clone(), geo);
                         model.saved_positions.insert(pos.clone());
                         model.saved_positions_names.insert(name, pos);
+                        // Update `model.view_saved_positions`.
+                        self.view_n_saved_positions(model.view_saved_positions.len(), model, caps);
                         self.save_saved_positions(model, caps);
                     }
                 } else {
@@ -179,26 +176,28 @@ impl App for GeoApp {
             Event::DelSavedPos(name) => {
                 if let Some(pos) = model.saved_positions_names.remove(&name) {
                     model.saved_positions.remove(&pos);
-                    if let Some(idx) = model.view_saved_positions.iter().position(|x| *x == pos) {
-                        model.view_saved_positions.remove(idx);
-                    }
+                    // Update `model.view_saved_positions`.
+                    self.view_n_saved_positions(model.view_saved_positions.len(), model, caps);
                     self.save_saved_positions(model, caps);
                     model.msg = format_compact!("{name} has been removed.");
                 } else {
                     model.msg = format_compact!("Error: Position {name} does not exist.");
                 }
             }
-            Event::ViewNSavedPositions(n) => {
-                model.view_saved_positions = if let Some(Ok(curr_pos)) = &model.curr_pos {
-                    model
-                        .saved_positions
-                        .nearest_neighbor_iter(&rtree_point(curr_pos.coords))
-                        .cloned()
-                        .take(n)
-                        .collect::<Vec<_>>()
+            Event::ViewNSavedPositions(n) => self.view_n_saved_positions(n, model, caps),
+
+            // Saved Ways
+            Event::SaveAllPositions(name) => {
+                if let Some(all_positions) = &model.all_positions {
+                    if model.saved_ways.contains_key(&name) {
+                        model.msg = format_compact!("Error: The name {name} is already in use.");
+                    } else {
+                        model.saved_ways.insert(name, all_positions.way.clone());
+                        self.save_saved_ways(model, caps);
+                    }
                 } else {
-                    model.saved_positions.iter().cloned().take(n).collect()
-                };
+                    model.msg = format_compact!("Error: No positions recorded.");
+                }
             }
 
             Event::Msg(msg) => model.msg = msg,
@@ -228,8 +227,50 @@ impl App for GeoApp {
     }
 }
 
-/// Methods regarding saved positions.
 impl GeoApp {
+    fn load_persistant_data(&self, caps: &Capabilities, key: &'static str) {
+        caps.storage
+            .get(key.to_string(), move |res| Event::SetData {
+                res,
+                key: key.to_compact_string(),
+            });
+    }
+
+    /// Set data from persistant storage.
+    fn set_data(
+        &self,
+        model: &mut Model,
+        caps: &Capabilities,
+        res: Result<Option<Vec<u8>>, KeyValueError>,
+        key: CompactString,
+    ) -> Result<(), CompactString> {
+        match (res, key) {
+            (Ok(Some(bytes)), key) if key == SAVED_POSITIONS_KEY => {
+                let (rtree, names) = bincode::deserialize(bytes.as_slice()).map_err(|e| {
+                    format_compact!("Browser Error: Error while decoding saved_positions: {e}")
+                })?;
+                model.saved_positions = rtree;
+                model.saved_positions_names = names;
+                // Update `model.view_saved_positions`, probably not needed here.
+                self.view_n_saved_positions(model.view_saved_positions.len(), model, caps);
+            }
+            (Ok(Some(bytes)), key) if key == SAVED_WAYS_KEY => {
+                let saved_ways = bincode::deserialize(bytes.as_slice()).map_err(|e| {
+                    format_compact!("Browser Error: Error while decoding saved ways: {e}")
+                })?;
+                model.saved_ways = saved_ways;
+            }
+            (Ok(Some(_)), key) => panic!("Bad key: {key}"),
+            (Ok(None), _) => (),
+            (Err(e), key) => {
+                return Err(format_compact!(
+                    "Internal Error: When retrieving {key}: {e}"
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn save_saved_positions(&self, model: &mut Model, caps: &Capabilities) {
         caps.storage.set(
             SAVED_POSITIONS_KEY.to_string(),
@@ -244,5 +285,35 @@ impl GeoApp {
                 }
             },
         );
+    }
+
+    fn save_saved_ways(&self, model: &mut Model, caps: &Capabilities) {
+        caps.storage.set(
+            SAVED_WAYS_KEY.to_string(),
+            bincode::serialize(&model.saved_ways).unwrap(),
+            |res| {
+                if let Err(e) = res {
+                    Event::Msg(format_compact!(
+                        "Internal Error: Failed to serialize saved_ways: {e}"
+                    ))
+                } else {
+                    Event::None
+                }
+            },
+        );
+    }
+
+    /// `VeiwNSavedPositions` event.
+    fn view_n_saved_positions(&self, n: usize, model: &mut Model, _caps: &Capabilities) {
+        model.view_saved_positions = if let Some(Ok(curr_pos)) = &model.curr_pos {
+            model
+                .saved_positions
+                .nearest_neighbor_iter(&rtree_point(curr_pos.coords))
+                .cloned()
+                .take(n)
+                .collect::<Vec<_>>()
+        } else {
+            model.saved_positions.iter().cloned().take(n).collect()
+        };
     }
 }

@@ -20,37 +20,28 @@ fn RootComponent() -> impl IntoView {
         curr_pos_component(app),
         list_saved_positions(app),
         save_pos_component(app),
+        save_way_component(app),
         show_msg_component(app),
         footer_component(),
     ))
 }
 
 fn curr_pos_component(app: App) -> impl IntoView {
-    let view = move || app.view.get();
-    html::div().child((
-        html::h3().child("Current Position"),
-        html::p().child((
-            ("Status: ", move || view().gps_status.to_string()),
-            move || {
-                view().curr_pos.as_ref().map(|pos| {
-                    (
-                        html::br(),
-                        format!("{}", pos.latitude),
-                        html::br(),
-                        format!("{}", pos.longitude),
-                        pos.altitude
-                            .as_ref()
-                            .map(|x| (html::br(), "Altitude: ", format!("{x}"))),
-                    )
-                })
-            },
-        )),
-    ))
+    let body = move || {
+        let view = app.view.get();
+        ("Status: ", view.gps_status.to_string(), move || {
+            view.curr_pos_properties
+                .iter()
+                .map(|x| (html::br(), x.to_string()))
+                .collect::<Vec<_>>()
+        })
+    };
+    html::section().child((html::h3().child("Current Position"), html::p().child(body)))
 }
 
 fn list_saved_positions(app: App) -> impl IntoView {
     let no_saved_positions = create_memo(move |_| app.view.get().saved_positions.len());
-    html::details()
+    let body = html::details()
         .on(ev::toggle, move |ev| {
             let is_open = event_target::<web_sys::HtmlDetailsElement>(&ev).open();
             app.set_event
@@ -75,7 +66,8 @@ fn list_saved_positions(app: App) -> impl IntoView {
                     })
                     .collect::<Vec<_>>()
             },
-        ))
+        ));
+    html::p().child(body)
 }
 
 fn save_pos_component(app: App) -> impl IntoView {
@@ -111,6 +103,40 @@ fn save_pos_component(app: App) -> impl IntoView {
             html::button()
                 .on(ev::click, move |_| set_save_pos_dialog.set(true))
                 .child("Save the Current Position ")
+                .into_any()
+        }
+    }
+}
+
+fn save_way_component(app: App) -> impl IntoView {
+    let (save_way_dialog, set_save_way_dialog) = create_signal(false);
+    let input_node = create_node_ref();
+    move || {
+        if save_way_dialog.get() {
+            html::form()
+                .child(html::label().attr("for", "name").child("Name of the way"))
+                .child(
+                    html::input()
+                        .attr("type", "text")
+                        .attr("name", "name")
+                        .attr("autofocus", true)
+                        .node_ref(input_node),
+                )
+                .child(html::input().attr("type", "submit").attr("value", "Submit"))
+                .on(ev::submit, move |event| {
+                    event.prevent_default();
+                    let name = input_node
+                        .get()
+                        .expect("Input element should be initialized.")
+                        .value();
+                    app.set_event.set(Event::SaveAllPositions(name.into()));
+                    set_save_way_dialog.set(false);
+                })
+                .into_any()
+        } else {
+            html::button()
+                .on(ev::click, move |_| set_save_way_dialog.set(true))
+                .child("Save the Current Way ")
                 .into_any()
         }
     }

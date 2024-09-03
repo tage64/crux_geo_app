@@ -59,7 +59,7 @@ impl App {
             },
             true,
         );
-        set_event.set(Event::LoadSavedPositions);
+        set_event.set(Event::LoadPersistantData);
         Self { view, set_event }
     }
 }

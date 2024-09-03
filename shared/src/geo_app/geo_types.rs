@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use chrono::{DateTime, Utc};
 use compact_str::CompactString;
 use crux_geolocation::GeoInfo;
@@ -5,14 +7,31 @@ use jord::{LatLong, Length};
 use rstar::{PointDistance, RTreeObject, AABB};
 use serde::{Deserialize, Serialize};
 
-/// A saved position.
+/// A position.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SavedPos {
-    pub name: CompactString,
+pub struct Position {
     pub coords: LatLong,
     pub altitude: Option<Length>,
     pub accuracy: Option<Length>,
     pub altitude_accuracy: Option<Length>,
+}
+
+impl Position {
+    pub fn new(geo: &GeoInfo) -> Self {
+        Self {
+            coords: geo.coords,
+            altitude: geo.altitude,
+            accuracy: geo.accuracy,
+            altitude_accuracy: geo.altitude_accuracy,
+        }
+    }
+}
+
+/// A saved position.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedPos {
+    pub name: CompactString,
+    pub pos: Position,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -20,10 +39,7 @@ impl SavedPos {
     pub fn new(name: CompactString, geo: &GeoInfo) -> Self {
         Self {
             name,
-            coords: geo.coords,
-            altitude: geo.altitude,
-            accuracy: geo.accuracy,
-            altitude_accuracy: geo.altitude_accuracy,
+            pos: Position::new(geo),
             timestamp: geo.timestamp,
         }
     }
@@ -42,13 +58,13 @@ impl SavedPos {
 impl RTreeObject for SavedPos {
     type Envelope = AABB<[f64; 3]>;
     fn envelope(&self) -> Self::Envelope {
-        AABB::from_point(rtree_point(self.coords))
+        AABB::from_point(rtree_point(self.pos.coords))
     }
 }
 
 impl PointDistance for SavedPos {
     fn distance_2(&self, point: &[f64; 3]) -> f64 {
-        let me = rtree_point(self.coords);
+        let me = rtree_point(self.pos.coords);
         let [x, y, z] = [me[0] - point[0], me[1] - point[1], me[2] - point[2]];
         return x * x + y * y + z * z;
     }
@@ -58,4 +74,48 @@ impl PointDistance for SavedPos {
 pub fn rtree_point(coords: LatLong) -> [f64; 3] {
     let nvec = coords.to_nvector().as_vec3();
     [nvec.x(), nvec.y(), nvec.z()]
+}
+
+/// A list of positions, preferably forming a natural path on the map.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Way {
+    /// An ordered list of positions.
+    pub nodes: Vec<Position>,
+}
+
+/// A way which is being recorded.
+#[derive(Debug, Clone)]
+pub(crate) struct RecordedWay {
+    pub way: Way,
+    /// Timestamps for each node in the way. Must start with 0 and be monotonically increasing.
+    pub timestamps: Vec<Duration>,
+}
+
+impl RecordedWay {
+    /// Start a recording.
+    pub fn start(pos: Position) -> Self {
+        Self {
+            way: Way { nodes: vec![pos] },
+            timestamps: vec![Duration::ZERO],
+        }
+    }
+
+    /// Add a point to the recording.
+    pub fn push(&mut self, pos: Position) {
+        self.timestamps.push(Duration::ZERO);
+        self.way.nodes.push(pos);
+    }
+
+    /// Get all positions from now minus a certain duration.
+    ///
+    /// Returns a tuple of positions and durations since the start of the recording.
+    pub fn get_last(&self, duration: Duration) -> (&[Position], &[Duration]) {
+        // TODO: Fix this.
+        // let i = self
+        // .timestamps
+        // .binary_search(&(self.started_at.duration_since(Instant::now()) - duration))
+        // .unwrap_or_else(|x| x);
+        let i = 0;
+        (&self.way.nodes[i..], &self.timestamps[i..])
+    }
 }
