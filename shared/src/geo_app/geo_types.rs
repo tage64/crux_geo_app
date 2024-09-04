@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use chrono::{DateTime, Utc};
 use compact_str::CompactString;
 use crux_geolocation::GeoInfo;
@@ -87,35 +85,39 @@ pub struct Way {
 #[derive(Debug, Clone)]
 pub(crate) struct RecordedWay {
     pub way: Way,
-    /// Timestamps for each node in the way. Must start with 0 and be monotonically increasing.
-    pub timestamps: Vec<Duration>,
+    /// Timestamps for each node in the way. Must be monotonically increasing.
+    pub timestamps: Vec<DateTime<Utc>>,
 }
 
 impl RecordedWay {
-    /// Start a recording.
-    pub fn start(pos: Position) -> Self {
+    pub fn new() -> Self {
         Self {
-            way: Way { nodes: vec![pos] },
-            timestamps: vec![Duration::ZERO],
+            way: Way { nodes: vec![] },
+            timestamps: vec![],
         }
     }
 
     /// Add a point to the recording.
-    pub fn push(&mut self, pos: Position) {
-        self.timestamps.push(Duration::ZERO);
-        self.way.nodes.push(pos);
+    pub fn add(&mut self, geo: &GeoInfo) {
+        match self.timestamps.binary_search(&geo.timestamp) {
+            Err(i) => {
+                self.timestamps.insert(i, geo.timestamp);
+                self.way.nodes.insert(i, Position::new(geo));
+            }
+            Ok(i) => {
+                // A node with the same timestamp is already saved, so we will replace it.
+                self.timestamps[i] = geo.timestamp;
+                self.way.nodes[i] = Position::new(geo);
+            }
+        }
     }
 
-    /// Get all positions from now minus a certain duration.
-    ///
-    /// Returns a tuple of positions and durations since the start of the recording.
-    pub fn get_last(&self, duration: Duration) -> (&[Position], &[Duration]) {
-        // TODO: Fix this.
-        // let i = self
-        // .timestamps
-        // .binary_search(&(self.started_at.duration_since(Instant::now()) - duration))
-        // .unwrap_or_else(|x| x);
-        let i = 0;
+    /// Get all positions since a certain timestamp. (Inclusive)
+    pub fn get_since(&self, timestamp: DateTime<Utc>) -> (&[Position], &[DateTime<Utc>]) {
+        let i = self
+            .timestamps
+            .binary_search(&timestamp)
+            .unwrap_or_else(|i| i);
         (&self.way.nodes[i..], &self.timestamps[i..])
     }
 }

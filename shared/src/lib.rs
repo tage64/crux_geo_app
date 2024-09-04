@@ -1,7 +1,9 @@
+mod capabilities;
 pub mod geo_app;
 
 use std::sync::LazyLock;
 
+pub use capabilities::*;
 pub use crux_core::{bridge::Bridge, Core, Request};
 pub use geo_app::*;
 use wasm_bindgen::prelude::wasm_bindgen;

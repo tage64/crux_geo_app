@@ -15,6 +15,8 @@ use rstar::RTree;
 use serde::{Deserialize, Serialize};
 use view_types::ViewModel;
 
+use crate::FileDownload;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Event {
     // Geolocation
@@ -35,6 +37,8 @@ pub enum Event {
         res: Result<Option<Vec<u8>>, KeyValueError>,
         key: CompactString,
     },
+    /// Download the data
+    DownloadData,
 
     // Saved Positions and Ways
     /// Save the current position with a name.
@@ -112,6 +116,7 @@ pub struct Capabilities {
     storage: KeyValue<Event>,
     time: Time<Event>,
     geolocation: Geolocation<Event>,
+    file_download: FileDownload<Event>,
 }
 
 #[derive(Default)]
@@ -137,9 +142,11 @@ impl App for GeoApp {
                 model.curr_pos = Some(geo_result.clone());
                 if let Ok(geo_info) = geo_result {
                     if let Some(rec) = &mut model.all_positions {
-                        rec.push(Position::new(&geo_info));
+                        rec.add(&geo_info);
                     } else {
-                        model.all_positions = Some(RecordedWay::start(Position::new(&geo_info)));
+                        let mut rec = RecordedWay::new();
+                        rec.add(&geo_info);
+                        model.all_positions = Some(rec);
                     }
                 }
             }
@@ -153,6 +160,17 @@ impl App for GeoApp {
                 if let Err(e) = self.set_data(model, caps, res, key) {
                     model.msg = e;
                 }
+            }
+            Event::DownloadData => {
+                let json = serde_json::json!({
+                    SAVED_POSITIONS_KEY: (&model.saved_positions, &model.saved_positions_names),
+                    SAVED_WAYS_KEY: &model.saved_ways,
+                });
+                caps.file_download.file_download(
+                    serde_json::to_vec(&json).unwrap(),
+                    Some("geosuper_data.json"),
+                    Some("application/json"),
+                );
             }
 
             // Saved Positions

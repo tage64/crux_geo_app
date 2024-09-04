@@ -11,7 +11,7 @@ use crux_time::{TimeRequest, TimeResponse};
 use geolocation::GeoWatch;
 use leptos::signal_prelude::*;
 use leptos::watch;
-use shared::{view_types::ViewModel, Effect, Event, GeoApp, Request};
+use shared::{view_types::ViewModel, Effect, Event, FileDownloadRequest, GeoApp, Request};
 
 /// Signals to send events to and get the last view model from the app.
 #[derive(Clone, Copy)]
@@ -20,6 +20,8 @@ pub struct App {
     pub view: ReadSignal<Rc<ViewModel>>,
     /// Signal to send events to the app.
     pub set_event: WriteSignal<Event>,
+    /// Signal to receive a `FileDownloadRequest`.
+    pub file_download: RwSignal<Option<FileDownloadRequest>>,
 }
 
 /// A backend struct for the app.
@@ -30,6 +32,8 @@ struct Backend {
     render: WriteSignal<Rc<ViewModel>>,
     /// Signal to receive events that should be sent to the core.
     event: ReadSignal<Event>,
+    /// Signal to set a file download request.
+    set_file_download: WriteSignal<Option<FileDownloadRequest>>,
     /// A possible current watch on the geolocation API.
     geo_watch: RefCell<Option<GeoWatch>>,
 }
@@ -39,10 +43,12 @@ impl App {
         let core = shared::Core::new();
         let (view, render) = create_signal(Rc::new(core.view()));
         let (event, set_event) = create_signal(Event::StartGeolocation);
+        let file_download = create_rw_signal(None);
         let backend = Rc::new(Backend {
             core,
             render,
             event,
+            set_file_download: file_download.write_only(),
             geo_watch: RefCell::new(None),
         });
         let _ = watch(
@@ -60,7 +66,11 @@ impl App {
             true,
         );
         set_event.set(Event::LoadPersistantData);
-        Self { view, set_event }
+        Self {
+            view,
+            set_event,
+            file_download,
+        }
     }
 }
 
@@ -75,6 +85,7 @@ impl Backend {
                 Effect::Time(req) => self.clone().process_time(req),
                 Effect::KeyValue(req) => self.process_storage(req),
                 Effect::Geolocation(req) => self.process_geolocation(req),
+                Effect::FileDownload(req) => self.set_file_download.set(Some(req.operation)),
             }
         }
     }

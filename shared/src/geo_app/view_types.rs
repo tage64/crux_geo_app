@@ -2,10 +2,9 @@
 //!
 //! The general theme is that these types formats numbers and units to strings so that the UI don't
 //! have to bother with that.
-use std::time::Duration;
 
 use arrayvec::ArrayVec;
-use chrono::prelude::*;
+use chrono::{prelude::*, TimeDelta};
 use compact_str::{format_compact, CompactString, ToCompactString};
 use crux_geolocation::GeoInfo;
 use jord::{spherical::Sphere, LatLong};
@@ -176,7 +175,12 @@ impl ViewModel {
                 let positions_in_last_minute = model
                     .all_positions
                     .as_ref()
-                    .map(|rec| rec.get_last(Duration::from_secs(60)).0.len())
+                    .and_then(|rec| {
+                        model
+                            .curr_time
+                            .as_ref()
+                            .map(|t| rec.get_since(*t - TimeDelta::minutes(1)).0.len())
+                    })
                     .unwrap_or(0);
                 text +=
                     &format_compact!("{} positions in the last minute.", positions_in_last_minute);

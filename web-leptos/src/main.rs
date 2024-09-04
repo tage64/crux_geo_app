@@ -6,6 +6,7 @@ use std::fmt;
 use std::hash::{DefaultHasher, Hash};
 use std::rc::Rc;
 
+use base64::prelude::*;
 use build_time::build_time_local;
 use leptos::{
     component, create_effect, create_node_ref, ev, event_target, html, signal_prelude::*, web_sys,
@@ -22,6 +23,7 @@ fn RootComponent() -> impl IntoView {
         save_pos_component(app),
         save_way_component(app),
         show_msg_component(app),
+        file_download_component(app),
         footer_component(),
     ))
 }
@@ -154,6 +156,40 @@ fn show_msg_component(app: App) -> impl IntoView {
             }
         }),
     ))
+}
+
+fn file_download_component(app: App) -> impl IntoView {
+    move || {
+        let f = app.file_download.get();
+        if let Some(f) = f {
+            let content_len = f.content.len();
+            let download_link = html::a()
+                .attr("download", f.file_name.unwrap_or_default().to_string())
+                .attr(
+                    "href",
+                    format!(
+                        "data:{};base64,{}",
+                        f.mime_type.unwrap_or_default(),
+                        BASE64_STANDARD.encode(f.content)
+                    ),
+                )
+                .on(ev::click, move |_| app.file_download.set(None))
+                .attr("autofocus", true)
+                .child(format!(
+                    "Download JSON file ({:.2} kb)",
+                    content_len as f32 / 1000.0
+                ));
+            let cancel_button = html::button()
+                .on(ev::click, move |_| app.file_download.set(None))
+                .child("Cancel");
+            html::p().child((download_link, cancel_button)).into_any()
+        } else {
+            html::button()
+                .on(ev::click, move |_| app.set_event.set(Event::DownloadData))
+                .child("Download all Saved Data as JSON")
+                .into_any()
+        }
+    }
 }
 
 fn footer_component() -> impl IntoView {
