@@ -9,7 +9,7 @@ use crux_core::{render::Render, App};
 use crux_geolocation::{GeoInfo, GeoOptions, GeoResult, Geolocation};
 use crux_kv::{error::KeyValueError, KeyValue};
 use crux_time::{Time, TimeResponse};
-use geo_types::{rtree_point, Position, RecordedWay, SavedPos, Way};
+use geo_types::{rtree_point, Position, RecordedWay, SavedPos};
 use jord::spherical::Sphere;
 use rstar::RTree;
 use serde::{Deserialize, Serialize};
@@ -40,15 +40,21 @@ pub enum Event {
     /// Download the data
     DownloadData,
 
-    // Saved Positions and Ways
+    // Saved Positions
     /// Save the current position with a name.
     SaveCurrPos(CompactString),
     /// Delete a saved position by its name.
     DelSavedPos(CompactString),
     /// View the n nearest saved positions. To hide all, set this to 0.
     ViewNSavedPositions(usize),
+
+    // Recorded Ways
     /// Save the way since the app started.
     SaveAllPositions(CompactString),
+    /// Delete a recorded way.
+    DelRecordedWay(CompactString),
+    /// View n recorded ways.
+    ViewNRecordedWays(usize),
 
     // Time
     /// Tell that `Model::curr_time` should be updated.
@@ -79,18 +85,12 @@ const GEOLOCATION_OPTIONS: GeoOptions = GeoOptions {
 /// Key when saving saved positions in persistant storage.
 const SAVED_POSITIONS_KEY: &str = "saved_positions";
 /// Key when saving ways.
-const SAVED_WAYS_KEY: &str = "saved_ways";
+const RECORDED_WAYS_KEY: &str = "recorded_ways";
 
 #[derive(Default)]
 pub struct Model {
     /// The most recently received position.
     curr_pos: Option<GeoResult<GeoInfo>>,
-
-    // Recorded Ways
-    /// All positions since the app was started.
-    all_positions: Option<RecordedWay>,
-    /// Saved ways and their names.
-    saved_ways: HashMap<CompactString, Way>,
 
     // Saved Positions
     /// An r-tree with all saved positions.
@@ -98,8 +98,20 @@ pub struct Model {
     /// Saved positions by their names. This should probably be maid better in some way, but
     /// `RTree` doesn't support any other indexing than positions at the moment.
     saved_positions_names: HashMap<CompactString, SavedPos>,
+    /// The number of saved positions the UI at most want to show.
+    view_n_saved_positions: usize,
     /// Saved positions to view. Must exist in `self.saved_positions`.
     view_saved_positions: Vec<SavedPos>,
+
+    // Recorded Ways
+    /// All positions since the app was started.
+    all_positions: Option<RecordedWay>,
+    /// Saved ways and their names.
+    recorded_ways: HashMap<CompactString, RecordedWay>,
+    /// The number of recorded ways the UI at most want to show.
+    view_n_recorded_ways: usize,
+    /// Names of recorded ways to view.
+    view_recorded_ways: Vec<CompactString>,
 
     /// A message that should be viewed to the user.
     msg: CompactString,
@@ -154,7 +166,7 @@ impl App for GeoApp {
             // Persistant Data
             Event::LoadPersistantData => {
                 self.load_persistant_data(caps, SAVED_POSITIONS_KEY);
-                self.load_persistant_data(caps, SAVED_WAYS_KEY);
+                self.load_persistant_data(caps, RECORDED_WAYS_KEY);
             }
             Event::SetData { res, key } => {
                 if let Err(e) = self.set_data(model, caps, res, key) {
@@ -164,7 +176,7 @@ impl App for GeoApp {
             Event::DownloadData => {
                 let json = serde_json::json!({
                     SAVED_POSITIONS_KEY: (&model.saved_positions, &model.saved_positions_names),
-                    SAVED_WAYS_KEY: &model.saved_ways,
+                    RECORDED_WAYS_KEY: &model.recorded_ways,
                 });
                 caps.file_download.file_download(
                     serde_json::to_vec(&json).unwrap(),
@@ -184,7 +196,7 @@ impl App for GeoApp {
                         model.saved_positions.insert(pos.clone());
                         model.saved_positions_names.insert(name, pos);
                         // Update `model.view_saved_positions`.
-                        self.view_n_saved_positions(model.view_saved_positions.len(), model, caps);
+                        self.view_saved_positions(model, caps);
                         self.save_saved_positions(model, caps);
                     }
                 } else {
@@ -195,27 +207,45 @@ impl App for GeoApp {
                 if let Some(pos) = model.saved_positions_names.remove(&name) {
                     model.saved_positions.remove(&pos);
                     // Update `model.view_saved_positions`.
-                    self.view_n_saved_positions(model.view_saved_positions.len(), model, caps);
+                    self.view_saved_positions(model, caps);
                     self.save_saved_positions(model, caps);
                     model.msg = format_compact!("{name} has been removed.");
                 } else {
                     model.msg = format_compact!("Error: Position {name} does not exist.");
                 }
             }
-            Event::ViewNSavedPositions(n) => self.view_n_saved_positions(n, model, caps),
+            Event::ViewNSavedPositions(n) => {
+                model.view_n_saved_positions = n;
+                self.view_saved_positions(model, caps);
+            }
 
-            // Saved Ways
+            // Recorded Ways
             Event::SaveAllPositions(name) => {
                 if let Some(all_positions) = &model.all_positions {
-                    if model.saved_ways.contains_key(&name) {
+                    if model.recorded_ways.contains_key(&name) {
                         model.msg = format_compact!("Error: The name {name} is already in use.");
                     } else {
-                        model.saved_ways.insert(name, all_positions.way.clone());
-                        self.save_saved_ways(model, caps);
+                        model.recorded_ways.insert(name, all_positions.clone());
+                        self.view_recorded_ways(model, caps);
+                        self.save_recorded_ways(model, caps);
                     }
                 } else {
                     model.msg = format_compact!("Error: No positions recorded.");
                 }
+            }
+            Event::DelRecordedWay(name) => {
+                if let Some(way) = model.recorded_ways.remove(&name) {
+                    // Update `model.view_recorded_ways`.
+                    self.view_recorded_ways(model, caps);
+                    self.save_recorded_ways(model, caps);
+                    model.msg = format_compact!("{name} has been removed.");
+                } else {
+                    model.msg = format_compact!("Error: Way {name} does not exist.");
+                }
+            }
+            Event::ViewNRecordedWays(n) => {
+                model.view_n_recorded_ways = n;
+                self.view_recorded_ways(model, caps);
             }
 
             Event::Msg(msg) => model.msg = msg,
@@ -269,14 +299,16 @@ impl GeoApp {
                 })?;
                 model.saved_positions = rtree;
                 model.saved_positions_names = names;
-                // Update `model.view_saved_positions`, probably not needed here.
-                self.view_n_saved_positions(model.view_saved_positions.len(), model, caps);
+                // Update `model.view_saved_positions`.
+                self.view_saved_positions(model, caps);
             }
-            (Ok(Some(bytes)), key) if key == SAVED_WAYS_KEY => {
-                let saved_ways = bincode::deserialize(bytes.as_slice()).map_err(|e| {
+            (Ok(Some(bytes)), key) if key == RECORDED_WAYS_KEY => {
+                let recorded_ways = bincode::deserialize(bytes.as_slice()).map_err(|e| {
                     format_compact!("Browser Error: Error while decoding saved ways: {e}")
                 })?;
-                model.saved_ways = saved_ways;
+                model.recorded_ways = recorded_ways;
+                // Update `model.view_recorded_ways`.
+                self.view_recorded_ways(model, caps);
             }
             (Ok(Some(_)), key) => panic!("Bad key: {key}"),
             (Ok(None), _) => (),
@@ -305,14 +337,14 @@ impl GeoApp {
         );
     }
 
-    fn save_saved_ways(&self, model: &mut Model, caps: &Capabilities) {
+    fn save_recorded_ways(&self, model: &mut Model, caps: &Capabilities) {
         caps.storage.set(
-            SAVED_WAYS_KEY.to_string(),
-            bincode::serialize(&model.saved_ways).unwrap(),
+            RECORDED_WAYS_KEY.to_string(),
+            bincode::serialize(&model.recorded_ways).unwrap(),
             |res| {
                 if let Err(e) = res {
                     Event::Msg(format_compact!(
-                        "Internal Error: Failed to serialize saved_ways: {e}"
+                        "Internal Error: Failed to serialize recorded_ways: {e}"
                     ))
                 } else {
                     Event::None
@@ -321,17 +353,34 @@ impl GeoApp {
         );
     }
 
-    /// `VeiwNSavedPositions` event.
-    fn view_n_saved_positions(&self, n: usize, model: &mut Model, _caps: &Capabilities) {
+    /// Select the saved positions to view.
+    fn view_saved_positions(&self, model: &mut Model, _caps: &Capabilities) {
         model.view_saved_positions = if let Some(Ok(curr_pos)) = &model.curr_pos {
             model
                 .saved_positions
                 .nearest_neighbor_iter(&rtree_point(curr_pos.coords))
                 .cloned()
-                .take(n)
+                .take(model.view_n_saved_positions)
                 .collect::<Vec<_>>()
         } else {
-            model.saved_positions.iter().cloned().take(n).collect()
+            model
+                .saved_positions
+                .iter()
+                .cloned()
+                .take(model.view_n_saved_positions)
+                .collect()
         };
+    }
+
+    /// Select recorded ways to show.
+    fn view_recorded_ways(&self, model: &mut Model, _caps: &Capabilities) {
+        // TODO: Use an algorithm to select the n nearest ways.
+        model.view_recorded_ways = model
+            .recorded_ways
+            .keys()
+            .cloned()
+            .take(model.view_n_recorded_ways)
+            .collect();
+        model.view_recorded_ways.sort();
     }
 }

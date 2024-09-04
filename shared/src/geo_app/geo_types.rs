@@ -136,7 +136,7 @@ impl Way {
 }
 
 /// A way which is being recorded.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct RecordedWay {
     pub way: Way,
     /// Timestamps for each node in the way. Must be monotonically increasing.

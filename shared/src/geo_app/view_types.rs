@@ -11,7 +11,7 @@ use compact_str::{format_compact, CompactString, ToCompactString};
 use crux_geolocation::GeoInfo;
 use jord::{spherical::Sphere, LatLong};
 use serde::{Deserialize, Serialize};
-use smallvec::{smallvec, SmallVec};
+use smallvec::SmallVec;
 
 use super::{Model, Position, RecordedWay, SavedPos, PLANET};
 
@@ -227,9 +227,15 @@ impl ViewModel {
             .collect();
         let recorded_ways = model
             .all_positions
-            .as_ref()
-            .map(|x| smallvec![ViewRecordedWay::new("Since app start", x)])
-            .unwrap_or_default();
+            .iter()
+            .map(|x| ViewRecordedWay::new("Since app start", x))
+            .chain(
+                model
+                    .view_recorded_ways
+                    .iter()
+                    .map(|name| ViewRecordedWay::new(name, &model.recorded_ways[name])),
+            )
+            .collect();
         Self {
             gps_status,
             curr_pos_properties,

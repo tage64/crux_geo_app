@@ -9,8 +9,8 @@ use std::rc::Rc;
 use base64::prelude::*;
 use build_time::build_time_local;
 use leptos::{
-    component, create_effect, create_node_ref, ev, event_target, html, signal_prelude::*, web_sys,
-    IntoView,
+    component, create_effect, create_node_ref, ev, event_target, html, logging::warn,
+    signal_prelude::*, web_sys, IntoView,
 };
 use shared::{view_types::ViewModel, Event};
 
@@ -114,11 +114,10 @@ fn save_pos_component(app: App) -> impl IntoView {
 fn list_recorded_ways(app: App) -> impl IntoView {
     let no_recorded_ways = create_memo(move |_| app.view.get().recorded_ways.len());
     let body = html::details()
-        .on(ev::toggle, move |_ev| {
-            // TODO
-            // let is_open = event_target::<web_sys::HtmlDetailsElement>(&ev).open();
-            // app.set_event
-            // .set(Event::ViewNRecordedWays(if is_open { 10 } else { 0 }));
+        .on(ev::toggle, move |ev| {
+            let is_open = event_target::<web_sys::HtmlDetailsElement>(&ev).open();
+            app.set_event
+                .set(Event::ViewNRecordedWays(if is_open { 10 } else { 0 }));
         })
         .child((html::summary().child("Recorded ways"), move || {
             (0..no_recorded_ways.get())
