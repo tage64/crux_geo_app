@@ -5,6 +5,8 @@ use jord::{LatLong, Length};
 use rstar::{PointDistance, RTreeObject, AABB};
 use serde::{Deserialize, Serialize};
 
+use crate::PLANET;
+
 /// A position.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Position {
@@ -78,7 +80,59 @@ pub fn rtree_point(coords: LatLong) -> [f64; 3] {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Way {
     /// An ordered list of positions.
-    pub nodes: Vec<Position>,
+    nodes: Vec<Position>,
+    /// The length of the way.
+    length: Length,
+}
+
+impl Way {
+    pub fn new() -> Self {
+        Self {
+            nodes: vec![],
+            length: Length::ZERO,
+        }
+    }
+
+    pub fn nodes(&self) -> &[Position] {
+        &self.nodes
+    }
+
+    pub fn length(&self) -> Length {
+        self.length
+    }
+
+    /// Add a node to the end of the way.
+    pub fn append(&mut self, pos: Position) {
+        if let Some(last) = self.nodes.last() {
+            self.length =
+                self.length + PLANET.distance(last.coords.to_nvector(), pos.coords.to_nvector());
+        }
+        self.nodes.push(pos);
+    }
+
+    /// Insert a node at the specified index.
+    pub fn insert(&mut self, i: usize, pos: Position) {
+        self.nodes.insert(i, pos);
+        self.recompute_length()
+    }
+
+    /// Change a node at a certain index.
+    pub fn update(&mut self, i: usize, new_pos: Position) {
+        self.nodes[i] = new_pos;
+        self.recompute_length();
+    }
+
+    /// Recompute the length for the way.
+    fn recompute_length(&mut self) {
+        self.length = Length::ZERO;
+        for i in 1..self.nodes.len() {
+            self.length = self.length
+                + PLANET.distance(
+                    self.nodes[i - 1].coords.to_nvector(),
+                    self.nodes[i].coords.to_nvector(),
+                );
+        }
+    }
 }
 
 /// A way which is being recorded.
@@ -92,22 +146,32 @@ pub(crate) struct RecordedWay {
 impl RecordedWay {
     pub fn new() -> Self {
         Self {
-            way: Way { nodes: vec![] },
+            way: Way::new(),
             timestamps: vec![],
         }
     }
 
     /// Add a point to the recording.
     pub fn add(&mut self, geo: &GeoInfo) {
-        match self.timestamps.binary_search(&geo.timestamp) {
-            Err(i) => {
-                self.timestamps.insert(i, geo.timestamp);
-                self.way.nodes.insert(i, Position::new(geo));
-            }
-            Ok(i) => {
-                // A node with the same timestamp is already saved, so we will replace it.
-                self.timestamps[i] = geo.timestamp;
-                self.way.nodes[i] = Position::new(geo);
+        if self
+            .timestamps
+            .last()
+            .map(|x| x < &geo.timestamp)
+            .unwrap_or(true)
+        {
+            self.timestamps.push(geo.timestamp);
+            self.way.append(Position::new(geo));
+        } else {
+            match self.timestamps.binary_search(&geo.timestamp) {
+                Err(i) => {
+                    self.timestamps.insert(i, geo.timestamp);
+                    self.way.insert(i, Position::new(geo));
+                }
+                Ok(i) => {
+                    // A node with the same timestamp is already saved, so we will replace it.
+                    self.timestamps[i] = geo.timestamp;
+                    self.way.update(i, Position::new(geo));
+                }
             }
         }
     }

@@ -3,12 +3,15 @@
 //! The general theme is that these types formats numbers and units to strings so that the UI don't
 //! have to bother with that.
 
+use std::fmt;
+
 use arrayvec::ArrayVec;
 use chrono::{prelude::*, TimeDelta};
 use compact_str::{format_compact, CompactString, ToCompactString};
 use crux_geolocation::GeoInfo;
 use jord::{spherical::Sphere, LatLong};
 use serde::{Deserialize, Serialize};
+use smallvec::{smallvec, SmallVec};
 
 use super::{Model, Position, RecordedWay, SavedPos, PLANET};
 
@@ -131,12 +134,33 @@ pub struct ViewRecordedWay {
     /// The elapsed time, distance and average speed.
     pub summary: CompactString,
     /// A number of properties, like number of nodes.
-    pub properties: ArrayVec<CompactString, 1>,
+    pub properties: ArrayVec<CompactString, 3>,
 }
 
 impl ViewRecordedWay {
-    pub(crate) fn new(_rec: &RecordedWay) -> Self {
-        todo!()
+    pub(crate) fn new(name: impl fmt::Display, rec: &RecordedWay) -> Self {
+        let summary = format_compact!("{}: {} meters", name, rec.way.length().as_metres().round());
+        let properties = if rec.way.nodes().len() > 0 {
+            ArrayVec::from([
+                format_compact!("Number of nodes: {}", rec.way.nodes().len()),
+                format_compact!(
+                    "Start time: {}",
+                    format_timestamp(*rec.timestamps.first().unwrap())
+                ),
+                format_compact!(
+                    "End time: {}",
+                    format_timestamp(*rec.timestamps.last().unwrap())
+                ),
+            ])
+        } else {
+            let mut p = ArrayVec::new();
+            p.push("The way doesn't have any nodes.".to_compact_string());
+            p
+        };
+        Self {
+            summary,
+            properties,
+        }
     }
 }
 
@@ -150,6 +174,8 @@ pub struct ViewModel {
     pub curr_pos_properties: ArrayVec<CompactString, 7>,
     /// Saved positions to show.
     pub saved_positions: Vec<ViewSavedPos>,
+    /// Recorded ways to show. Shows at least always the way since the app started.
+    pub recorded_ways: SmallVec<[ViewRecordedWay; 1]>,
     /// A message that should be displayed to the user.
     pub msg: Option<CompactString>,
 }
@@ -199,10 +225,16 @@ impl ViewModel {
             .into_iter()
             .map(|p| ViewSavedPos::new(p, curr_pos.map(|x| x.coords)))
             .collect();
+        let recorded_ways = model
+            .all_positions
+            .as_ref()
+            .map(|x| smallvec![ViewRecordedWay::new("Since app start", x)])
+            .unwrap_or_default();
         Self {
             gps_status,
             curr_pos_properties,
             saved_positions,
+            recorded_ways,
             msg: if model.msg.is_empty() {
                 None
             } else {

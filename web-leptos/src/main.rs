@@ -21,6 +21,7 @@ fn RootComponent() -> impl IntoView {
         curr_pos_component(app),
         list_saved_positions(app),
         save_pos_component(app),
+        list_recorded_ways(app),
         save_way_component(app),
         show_msg_component(app),
         file_download_component(app),
@@ -108,6 +109,35 @@ fn save_pos_component(app: App) -> impl IntoView {
                 .into_any()
         }
     }
+}
+
+fn list_recorded_ways(app: App) -> impl IntoView {
+    let no_recorded_ways = create_memo(move |_| app.view.get().recorded_ways.len());
+    let body = html::details()
+        .on(ev::toggle, move |_ev| {
+            // TODO
+            // let is_open = event_target::<web_sys::HtmlDetailsElement>(&ev).open();
+            // app.set_event
+            // .set(Event::ViewNRecordedWays(if is_open { 10 } else { 0 }));
+        })
+        .child((html::summary().child("Recorded ways"), move || {
+            (0..no_recorded_ways.get())
+                .into_iter()
+                .map(|i| {
+                    html::details().child(move || {
+                        let way = &app.view.get().recorded_ways[i];
+                        (
+                            html::summary().child(way.summary.to_string()),
+                            way.properties
+                                .iter()
+                                .map(|x| (x.to_string(), html::br()))
+                                .collect::<Vec<_>>(),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>()
+        }));
+    html::p().child(body)
 }
 
 fn save_way_component(app: App) -> impl IntoView {

@@ -1920,6 +1920,7 @@ dependencies = [
  "rstar",
  "serde",
  "serde_json",
+ "smallvec",
  "uniffi",
  "wasm-bindgen",
 ]
@@ -1960,6 +1961,9 @@ name = "smallvec"
 version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "smawk"
