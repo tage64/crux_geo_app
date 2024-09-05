@@ -12,16 +12,26 @@ use leptos::{
     component, create_effect, create_node_ref, ev, event_target, html, logging::warn,
     signal_prelude::*, web_sys, IntoView,
 };
-use shared::{view_types::ViewModel, Event};
+use shared::{
+    view_types::{ViewModel, ViewObject},
+    Event,
+};
 
 #[component]
 fn RootComponent() -> impl IntoView {
     let app = App::new();
     html::div().child((
         curr_pos_component(app),
-        list_saved_positions(app),
+        list_items(
+            app,
+            "Nearest saved positions",
+            Event::ViewNSavedPositions,
+            |v| &v.saved_positions,
+        ),
         save_pos_component(app),
-        list_recorded_ways(app),
+        list_items(app, "Recorded ways", Event::ViewNRecordedWays, |v| {
+            &v.recorded_ways
+        }),
         save_way_component(app),
         show_msg_component(app),
         file_download_component(app),
@@ -42,34 +52,38 @@ fn curr_pos_component(app: App) -> impl IntoView {
     html::section().child((html::h3().child("Current Position"), html::p().child(body)))
 }
 
-fn list_saved_positions(app: App) -> impl IntoView {
-    let no_saved_positions = create_memo(move |_| app.view.get().saved_positions.len());
+fn list_items<T: ViewObject>(
+    app: App,
+    summary: &'static str,
+    view_n_event: impl Fn(usize) -> Event + 'static,
+    items: impl Fn(&ViewModel) -> &[T] + Copy + 'static,
+) -> impl IntoView {
+    // Number of things.
+    let no_items = create_memo(move |_| items(&app.view.get()).len());
     let body = html::details()
         .on(ev::toggle, move |ev| {
             let is_open = event_target::<web_sys::HtmlDetailsElement>(&ev).open();
             app.set_event
-                .set(Event::ViewNSavedPositions(if is_open { 10 } else { 0 }));
+                .set(view_n_event(if is_open { 10 } else { 0 }));
         })
-        .child((
-            html::summary().child("Nearest Saved positions"),
-            move || {
-                (0..no_saved_positions.get())
-                    .into_iter()
-                    .map(|i| {
-                        html::details().child(move || {
-                            let pos = &app.view.get().saved_positions[i];
-                            (
-                                html::summary().child(pos.summary.to_string()),
-                                pos.properties
-                                    .iter()
-                                    .map(|x| (x.to_string(), html::br()))
-                                    .collect::<Vec<_>>(),
-                            )
-                        })
+        .child((html::summary().child(summary), move || {
+            (0..no_items.get())
+                .into_iter()
+                .map(move |i| {
+                    html::details().child(move || {
+                        let view = app.view.get();
+                        let item = &items(&view)[i];
+                        (
+                            html::summary().child(item.summary().to_string()),
+                            item.properties()
+                                .iter()
+                                .map(|x| (x.to_string(), html::br()))
+                                .collect::<Vec<_>>(),
+                        )
                     })
-                    .collect::<Vec<_>>()
-            },
-        ));
+                })
+                .collect::<Vec<_>>()
+        }));
     html::p().child(body)
 }
 
@@ -109,34 +123,6 @@ fn save_pos_component(app: App) -> impl IntoView {
                 .into_any()
         }
     }
-}
-
-fn list_recorded_ways(app: App) -> impl IntoView {
-    let no_recorded_ways = create_memo(move |_| app.view.get().recorded_ways.len());
-    let body = html::details()
-        .on(ev::toggle, move |ev| {
-            let is_open = event_target::<web_sys::HtmlDetailsElement>(&ev).open();
-            app.set_event
-                .set(Event::ViewNRecordedWays(if is_open { 10 } else { 0 }));
-        })
-        .child((html::summary().child("Recorded ways"), move || {
-            (0..no_recorded_ways.get())
-                .into_iter()
-                .map(|i| {
-                    html::details().child(move || {
-                        let way = &app.view.get().recorded_ways[i];
-                        (
-                            html::summary().child(way.summary.to_string()),
-                            way.properties
-                                .iter()
-                                .map(|x| (x.to_string(), html::br()))
-                                .collect::<Vec<_>>(),
-                        )
-                    })
-                })
-                .collect::<Vec<_>>()
-        }));
-    html::p().child(body)
 }
 
 fn save_way_component(app: App) -> impl IntoView {

@@ -69,6 +69,17 @@ fn format_timestamp(timestamp: DateTime<Utc>) -> CompactString {
         .to_compact_string()
 }
 
+/// A trait for things which consists of a short summary, some properties, and maybe even some more
+/// properties.
+pub trait ViewObject {
+    fn summary(&self) -> &CompactString;
+    fn properties(&self) -> &[CompactString];
+    /// Even more properties which are usually not very interesting. May be empty.
+    fn more_properties(&self) -> &[CompactString] {
+        &[]
+    }
+}
+
 /// Information about a saved position.
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewSavedPos {
@@ -109,6 +120,15 @@ impl ViewSavedPos {
             summary,
             properties,
         }
+    }
+}
+
+impl ViewObject for ViewSavedPos {
+    fn summary(&self) -> &CompactString {
+        &self.summary
+    }
+    fn properties(&self) -> &[CompactString] {
+        &self.properties
     }
 }
 
@@ -161,6 +181,15 @@ impl ViewRecordedWay {
             summary,
             properties,
         }
+    }
+}
+
+impl ViewObject for ViewRecordedWay {
+    fn summary(&self) -> &CompactString {
+        &self.summary
+    }
+    fn properties(&self) -> &[CompactString] {
+        &self.properties
     }
 }
 
