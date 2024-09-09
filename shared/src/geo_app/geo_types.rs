@@ -1,10 +1,16 @@
+use std::ops::Div;
+
 use chrono::{DateTime, Utc};
 use compact_str::CompactString;
 use crux_geolocation::GeoInfo;
-use jord::{LatLong, Length, NVector};
+use jord::{
+    spherical::{GreatCircle, MinorArc},
+    LatLong, Length, NVector, Vec3,
+};
 use rstar::{PointDistance, RTreeObject, AABB};
 use serde::{Deserialize, Serialize};
 
+use crate::numbers::eq_zero;
 use crate::PLANET;
 
 /// A position.
@@ -78,17 +84,74 @@ pub fn rtree_point(coords: LatLong) -> [f64; 3] {
 
 /// A line is actually a minor arc (or a geodesi) on the surface of the planet.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct Line {
-    start: NVector,
-    end: NVector,
-}
+pub struct Line(MinorArc);
 
 impl Line {
     pub fn new(start: LatLong, end: LatLong) -> Self {
-        Self {
-            start: start.to_nvector(),
-            end: end.to_nvector(),
+        Line(MinorArc::new(start.to_nvector(), end.to_nvector()))
+    }
+
+    /// Compute the min and max points on this line with respect to a certain direction.
+    ///
+    /// `direction` **must** be a unit length vector.
+    ///
+    /// Returns a tuple (min, max).
+    fn extrema(&self, direction: Vec3) -> (f64, f64) {
+        let n = self.0.normal();
+        // m is orthogonal to the normal and the direction.
+        let m = n.cross_prod(direction);
+        // ms and me are the dot products between m and the start and end respectively.
+        let ms = m.dot_prod(self.0.start().as_vec3());
+        let me = m.dot_prod(self.0.end().as_vec3());
+        let start_height = direction.dot_prod(self.0.start().as_vec3());
+        let end_height = direction.dot_prod(self.0.end().as_vec3());
+        let (min_p, max_p) = if start_height < end_height {
+            (start_height, end_height)
+        } else {
+            (end_height, start_height)
+        };
+        if ms * me >= 0.0 || eq_zero(ms) || eq_zero(me) {
+            (min_p, max_p)
+        } else if ms < 0.0 {
+            (min_p, direction.cross_prod(n).norm())
+        } else {
+            (-direction.cross_prod(n).norm(), max_p)
         }
+    }
+}
+
+impl RTreeObject for Line {
+    type Envelope = AABB<[f64; 3]>;
+    fn envelope(&self) -> Self::Envelope {
+        let (x_min, x_max) = self.extrema(Vec3::UNIT_X);
+        let (y_min, y_max) = self.extrema(Vec3::UNIT_Y);
+        let (z_min, z_max) = self.extrema(Vec3::UNIT_Z);
+        AABB::from_corners([x_min, y_min, z_min], [x_max, y_max, z_max])
+    }
+}
+
+impl PointDistance for Line {
+    fn distance_2(&self, point: &[f64; 3]) -> f64 {
+        let point = NVector::new(Vec3::new(point[0], point[1], point[2]));
+        f64::min(
+            PLANET
+                .cross_track_distance(point, GreatCircle::new(self.0.start(), self.0.end()))
+                .as_metres()
+                .div(PLANET.radius().as_metres())
+                .powi(2),
+            f64::min(
+                PLANET
+                    .distance(point, self.0.start())
+                    .as_metres()
+                    .div(PLANET.radius().as_metres())
+                    .powi(2),
+                PLANET
+                    .distance(point, self.0.end())
+                    .as_metres()
+                    .div(PLANET.radius().as_metres())
+                    .powi(2),
+            ),
+        )
     }
 }
 
@@ -199,5 +262,53 @@ impl RecordedWay {
             .binary_search(&timestamp)
             .unwrap_or_else(|i| i);
         (&self.way.nodes[i..], &self.timestamps[i..])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::iproduct;
+    use jord::{spherical::Sphere, Angle};
+
+    use super::*;
+    use crate::numbers::{gte, lte};
+
+    #[test]
+    fn test_line_extrema() {
+        let angles = [
+            Angle::ZERO,
+            Angle::QUARTER_CIRCLE,
+            Angle::HALF_CIRCLE,
+            Angle::NEG_HALF_CIRCLE,
+            Angle::NEG_QUARTER_CIRCLE,
+        ];
+        let directions = [Vec3::UNIT_X, Vec3::UNIT_Y, Vec3::UNIT_Z];
+        let fractions = [0.0, 1.0 / 4.0, 1.0 / 3.0, 1.0 / 2.0, 1.0];
+        for (lat_1, lat_2, long_1, long_2, direction) in
+            iproduct!(angles, angles, angles, angles, directions)
+        {
+            let line = Line::new(LatLong::new(lat_1, long_1), LatLong::new(lat_2, long_2));
+            let (min, max) = line.extrema(direction);
+            assert!(-1.0 <= min);
+            assert!(max <= 1.0);
+            assert!(min <= max);
+            let start_height = direction.dot_prod(line.0.start().as_vec3());
+            let end_height = direction.dot_prod(line.0.end().as_vec3());
+            let (min_p, max_p) = if start_height < end_height {
+                (start_height, end_height)
+            } else {
+                (end_height, start_height)
+            };
+            assert!(min <= min_p);
+            assert!(max_p <= max);
+            for fraction in fractions {
+                let point =
+                    Sphere::interpolated_pos(line.0.start(), line.0.end(), fraction).unwrap();
+                assert!(line.0.contains_point(point));
+                let height = direction.dot_prod(point.as_vec3());
+                assert!(lte(height, max));
+                assert!(gte(height, min));
+            }
+        }
     }
 }

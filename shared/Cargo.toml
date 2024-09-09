@@ -29,3 +29,6 @@ wasm-bindgen = "0.2.93"
 
 [build-dependencies]
 uniffi = { version = "0.28.1", features = ["build", "cli"] }
+
+[dev-dependencies]
+itertools = "0.13.0"

@@ -1,5 +1,7 @@
 mod capabilities;
 pub mod geo_app;
+#[allow(unused)]
+mod numbers;
 
 use std::sync::LazyLock;
 
