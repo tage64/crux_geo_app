@@ -13,6 +13,7 @@ keywords = ["crux", "crux_core", "cross-platform-ui", "ffi", "wasm"]
 
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
+compact_str = { version = "0.8.0", features = ["serde"] }
 crux_core = "0.8.1"
 crux_kv = "0.4.2"
 crux_time = { version = "0.4.4", features = ["chrono"] }

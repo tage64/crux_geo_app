@@ -2498,6 +2498,7 @@ dependencies = [
  "build-time",
  "chrono",
  "codee",
+ "compact_str",
  "console_error_panic_hook",
  "crux_geolocation",
  "crux_kv",

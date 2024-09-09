@@ -14,7 +14,7 @@ typegen = ["crux_core/typegen"]
 arrayvec = { version = "0.7.6", features = ["serde"] }
 bincode = "1.3.3"
 chrono.workspace = true
-compact_str = { version = "0.8.0", features = ["serde"] }
+compact_str.workspace = true
 crux_core.workspace = true
 crux_geolocation = { version = "0.1.0", path = "../crux_geolocation" }
 crux_kv.workspace = true

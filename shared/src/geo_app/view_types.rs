@@ -13,7 +13,7 @@ use jord::{spherical::Sphere, LatLong};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-use super::{Model, Position, RecordedWay, SavedPos, PLANET};
+use super::{Event, Model, Position, RecordedWay, SavedPos, PLANET};
 
 /// Precition for latitude and longitude.
 const COORD_PRECITION: usize = 5;
@@ -74,6 +74,8 @@ fn format_timestamp(timestamp: DateTime<Utc>) -> CompactString {
 pub trait ViewObject {
     fn summary(&self) -> &CompactString;
     fn properties(&self) -> &[CompactString];
+    /// An event to delete the object.
+    fn delete(&self) -> Option<Event>;
     /// Even more properties which are usually not very interesting. May be empty.
     fn more_properties(&self) -> &[CompactString] {
         &[]
@@ -83,14 +85,18 @@ pub trait ViewObject {
 /// Information about a saved position.
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewSavedPos {
+    /// The name of the saved position.
+    pub name: CompactString,
     /// The name and (if it does exist) a distance and direction.
     pub summary: CompactString,
     /// A number of properties, like latitude and timestamp.
     pub properties: ArrayVec<CompactString, 6>,
+    /// Whether it can be deleted.
+    pub deleateable: bool,
 }
 
 impl ViewSavedPos {
-    fn new(saved_pos: SavedPos, curr_pos: Option<LatLong>) -> Self {
+    fn new(saved_pos: SavedPos, curr_pos: Option<LatLong>, deleateable: bool) -> Self {
         let summary = if let Some(curr_coords) = curr_pos {
             format_compact!(
                 "{}: {} m, {}°",
@@ -107,7 +113,7 @@ impl ViewSavedPos {
                 .round()
             )
         } else {
-            saved_pos.name
+            saved_pos.name.clone()
         };
 
         let mut properties = ArrayVec::new();
@@ -117,8 +123,10 @@ impl ViewSavedPos {
             format_timestamp(saved_pos.timestamp)
         ));
         Self {
+            name: saved_pos.name,
             summary,
             properties,
+            deleateable,
         }
     }
 }
@@ -129,6 +137,13 @@ impl ViewObject for ViewSavedPos {
     }
     fn properties(&self) -> &[CompactString] {
         &self.properties
+    }
+    fn delete(&self) -> Option<Event> {
+        if self.deleateable {
+            Some(Event::DelSavedPos(self.name.clone()))
+        } else {
+            None
+        }
     }
 }
 
@@ -151,14 +166,17 @@ fn format_speed_and_heading(geo: &GeoInfo) -> ArrayVec<CompactString, 2> {
 /// Information about a way which is being recorded.
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewRecordedWay {
+    /// The name of the recorded way.
+    pub name: CompactString,
     /// The elapsed time, distance and average speed.
     pub summary: CompactString,
     /// A number of properties, like number of nodes.
     pub properties: ArrayVec<CompactString, 3>,
+    pub deleateable: bool,
 }
 
 impl ViewRecordedWay {
-    pub(crate) fn new(name: impl fmt::Display, rec: &RecordedWay) -> Self {
+    pub(crate) fn new(name: impl fmt::Display, rec: &RecordedWay, deleateable: bool) -> Self {
         let summary = format_compact!("{}: {} meters", name, rec.way.length().as_metres().round());
         let properties = if rec.way.nodes().len() > 0 {
             ArrayVec::from([
@@ -178,8 +196,10 @@ impl ViewRecordedWay {
             p
         };
         Self {
+            name: name.to_compact_string(),
             summary,
             properties,
+            deleateable,
         }
     }
 }
@@ -190,6 +210,13 @@ impl ViewObject for ViewRecordedWay {
     }
     fn properties(&self) -> &[CompactString] {
         &self.properties
+    }
+    fn delete(&self) -> Option<Event> {
+        if self.deleateable {
+            Some(Event::DelRecordedWay(self.name.clone()))
+        } else {
+            None
+        }
     }
 }
 
@@ -252,17 +279,17 @@ impl ViewModel {
             .view_saved_positions
             .clone()
             .into_iter()
-            .map(|p| ViewSavedPos::new(p, curr_pos.map(|x| x.coords)))
+            .map(|p| ViewSavedPos::new(p, curr_pos.map(|x| x.coords), true))
             .collect();
         let recorded_ways = model
             .all_positions
             .iter()
-            .map(|x| ViewRecordedWay::new("Since app start", x))
+            .map(|x| ViewRecordedWay::new("Since app start", x, false))
             .chain(
                 model
                     .view_recorded_ways
                     .iter()
-                    .map(|name| ViewRecordedWay::new(name, &model.recorded_ways[name])),
+                    .map(|name| ViewRecordedWay::new(name, &model.recorded_ways[name], true)),
             )
             .collect();
         Self {

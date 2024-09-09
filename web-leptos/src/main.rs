@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use base64::prelude::*;
 use build_time::build_time_local;
+use compact_str::CompactString;
 use leptos::{
     component, create_effect, create_node_ref, ev, event_target, html, logging::warn,
     signal_prelude::*, web_sys, IntoView,
@@ -79,6 +80,13 @@ fn list_items<T: ViewObject>(
                                 .iter()
                                 .map(|x| (x.to_string(), html::br()))
                                 .collect::<Vec<_>>(),
+                            item.delete().map(move |del_event| {
+                                html::button()
+                                    .on(ev::click, {
+                                        move |_| app.set_event.set(del_event.clone())
+                                    })
+                                    .child("Delete")
+                            }),
                         )
                     })
                 })
