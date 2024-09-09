@@ -38,11 +38,7 @@ impl Decoder<Vec<u8>> for Base64Codee {
 pub fn get(key: impl AsRef<str>) -> Option<Vec<u8>> {
     let (get_signal, _, _) = use_local_storage::<_, Base64Codee>(key);
     let value = get_signal.get();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 /// Set a value to persistant storage.

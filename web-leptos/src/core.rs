@@ -8,7 +8,6 @@ use chrono::Utc;
 use crux_geolocation::{GeoOptions, GeoRequest};
 use crux_kv::{value::Value, KeyValueOperation, KeyValueResponse, KeyValueResult};
 use crux_time::{TimeRequest, TimeResponse};
-use geolocation::GeoWatch;
 use leptos::signal_prelude::*;
 use leptos::watch;
 use shared::{view_types::ViewModel, Effect, Event, FileDownloadRequest, GeoApp, Request};
@@ -35,7 +34,7 @@ struct Backend {
     /// Signal to set a file download request.
     set_file_download: WriteSignal<Option<FileDownloadRequest>>,
     /// A possible current watch on the geolocation API.
-    geo_watch: RefCell<Option<GeoWatch>>,
+    geo_watch: WriteSignal<geolocation::Event>,
 }
 
 impl App {
@@ -49,19 +48,13 @@ impl App {
             render,
             event,
             set_file_download: file_download.write_only(),
-            geo_watch: RefCell::new(None),
+            geo_watch: geolocation::create_geo_watch(),
         });
         let _ = watch(
             move || event.get(),
             move |event, _, _| {
                 let effects = backend.core.process_event(event.clone());
                 backend.process_effects(effects);
-                // For some very strange reason, the geolocation service stops after this, so we
-                // need to restart it.
-                if backend.geo_watch.borrow().is_some() {
-                    let effects = backend.core.process_event(Event::StartGeolocation);
-                    backend.process_effects(effects);
-                }
             },
             true,
         );
@@ -164,20 +157,14 @@ impl Backend {
     }
 
     /// Process a geolocation request from the core.
-    fn process_geolocation(self: &Rc<Self>, request: Request<GeoRequest>) {
-        match request.operation {
-            GeoRequest::WatchPosition(opts) => {
-                let mut geo_watch = self.geo_watch.borrow_mut();
-                if let Some(geo_watch) = geo_watch.take() {
-                    geo_watch.stop_watch();
-                }
-                *geo_watch = Some(GeoWatch::watch(self.clone(), request, opts));
-            }
-            GeoRequest::ClearWatch => {
-                if let Some(geo_watch) = self.geo_watch.borrow_mut().take() {
-                    geo_watch.stop_watch();
-                }
-            }
+    fn process_geolocation(self: &Rc<Self>, req: Request<GeoRequest>) {
+        match req.operation {
+            GeoRequest::WatchPosition(opts) => self.geo_watch.set(geolocation::Event::Watch {
+                backend: self.clone(),
+                req: Rc::new(RefCell::new(req)),
+                opts,
+            }),
+            GeoRequest::ClearWatch => self.geo_watch.set(geolocation::Event::Stop),
         }
     }
 }

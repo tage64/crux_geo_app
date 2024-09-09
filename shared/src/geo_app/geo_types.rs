@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use compact_str::CompactString;
 use crux_geolocation::GeoInfo;
-use jord::{LatLong, Length};
+use jord::{LatLong, Length, NVector};
 use rstar::{PointDistance, RTreeObject, AABB};
 use serde::{Deserialize, Serialize};
 
@@ -74,6 +74,22 @@ impl PointDistance for SavedPos {
 pub fn rtree_point(coords: LatLong) -> [f64; 3] {
     let nvec = coords.to_nvector().as_vec3();
     [nvec.x(), nvec.y(), nvec.z()]
+}
+
+/// A line is actually a minor arc (or a geodesi) on the surface of the planet.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Line {
+    start: NVector,
+    end: NVector,
+}
+
+impl Line {
+    pub fn new(start: LatLong, end: LatLong) -> Self {
+        Self {
+            start: start.to_nvector(),
+            end: end.to_nvector(),
+        }
+    }
 }
 
 /// A list of positions, preferably forming a natural path on the map.
