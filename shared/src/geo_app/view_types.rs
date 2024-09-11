@@ -13,7 +13,8 @@ use jord::{spherical::Sphere, LatLong};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-use super::{Event, Model, Position, RecordedWay, SavedPos, PLANET};
+use super::geo_traits::*;
+use super::{Event, Model, RecordedWay, SavedPos, PLANET};
 
 /// Precition for latitude and longitude.
 const COORD_PRECITION: usize = 5;
@@ -21,9 +22,9 @@ const COORD_PRECITION: usize = 5;
 const PRECITION: usize = 1;
 
 /// Format latitude, longitude, altitude and accuracy.
-fn format_pos(pos: &Position) -> ArrayVec<CompactString, 5> {
-    let latitude = pos.coords.latitude().as_degrees();
-    let longitude = pos.coords.longitude().as_degrees();
+fn format_pos(pos: &(impl Coords + Altitude)) -> ArrayVec<CompactString, 5> {
+    let latitude = pos.coords().latitude().as_degrees();
+    let longitude = pos.coords().longitude().as_degrees();
     let north_south = if latitude >= 0.0 { "North" } else { "South" };
     let east_west = if longitude >= 0.0 { "East" } else { "West" };
     let mut properties = ArrayVec::new();
@@ -39,20 +40,20 @@ fn format_pos(pos: &Position) -> ArrayVec<CompactString, 5> {
         longitude,
         east_west,
     ));
-    if let Some(altitude) = pos.altitude {
+    if let Some(altitude) = pos.altitude() {
         properties.push(format_compact!(
             "Altitude: {:.*} meters",
             PRECITION,
             altitude.as_metres()
         ));
     }
-    if let Some(accuracy) = pos.accuracy {
+    if let Some(accuracy) = pos.accuracy() {
         properties.push(format_compact!(
             "Accuracy: {} meters",
             accuracy.as_metres().round()
         ));
     }
-    if let Some(altitude_accuracy) = pos.altitude_accuracy {
+    if let Some(altitude_accuracy) = pos.altitude_accuracy() {
         properties.push(format_compact!(
             "Altitude accuracy: {} meters",
             altitude_accuracy.as_metres().round()
@@ -117,7 +118,7 @@ impl ViewSavedPos {
         };
 
         let mut properties = ArrayVec::new();
-        properties.extend(format_pos(&saved_pos.pos));
+        properties.extend(format_pos(&saved_pos));
         properties.push(format_compact!(
             "Saved at: {}",
             format_timestamp(saved_pos.timestamp)
@@ -183,11 +184,11 @@ impl ViewRecordedWay {
                 format_compact!("Number of nodes: {}", rec.way.nodes().len()),
                 format_compact!(
                     "Start time: {}",
-                    format_timestamp(*rec.timestamps.first().unwrap())
+                    format_timestamp(rec.way().nodes().first().unwrap().timestamp())
                 ),
                 format_compact!(
                     "End time: {}",
-                    format_timestamp(*rec.timestamps.last().unwrap())
+                    format_timestamp(rec.way().nodes().last().unwrap().timestamp())
                 ),
             ])
         } else {
@@ -261,7 +262,7 @@ impl ViewModel {
                         model
                             .curr_time
                             .as_ref()
-                            .map(|t| rec.get_since(*t - TimeDelta::minutes(1)).0.len())
+                            .map(|t| rec.get_since(*t - TimeDelta::minutes(1)).len())
                     })
                     .unwrap_or(0);
                 text +=
@@ -273,7 +274,7 @@ impl ViewModel {
         let mut curr_pos_properties = ArrayVec::new();
         if let Some(p) = curr_pos {
             curr_pos_properties.extend(format_speed_and_heading(p));
-            curr_pos_properties.extend(format_pos(&Position::new(p)));
+            curr_pos_properties.extend(format_pos(p));
         }
         let saved_positions = model
             .view_saved_positions

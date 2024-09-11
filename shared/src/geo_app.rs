@@ -1,3 +1,4 @@
+mod geo_traits;
 mod geo_types;
 pub mod view_types;
 use std::collections::HashMap;
@@ -9,7 +10,7 @@ use crux_core::{render::Render, App};
 use crux_geolocation::{GeoInfo, GeoOptions, GeoResult, Geolocation};
 use crux_kv::{error::KeyValueError, KeyValue};
 use crux_time::{Time, TimeResponse};
-use geo_types::{rtree_point, Position, RecordedWay, SavedPos};
+use geo_types::{rtree_point, RecordedWay, SavedPos};
 use jord::spherical::Sphere;
 use rstar::RTree;
 use serde::{Deserialize, Serialize};
@@ -358,7 +359,7 @@ impl GeoApp {
         model.view_saved_positions = if let Some(Ok(curr_pos)) = &model.curr_pos {
             model
                 .saved_positions
-                .nearest_neighbor_iter(&rtree_point(curr_pos.coords))
+                .nearest_neighbor_iter(&rtree_point(&curr_pos.coords))
                 .cloned()
                 .take(model.view_n_saved_positions)
                 .collect::<Vec<_>>()

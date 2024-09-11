@@ -10,6 +10,7 @@ use jord::{
 use rstar::{PointDistance, RTreeObject, AABB};
 use serde::{Deserialize, Serialize};
 
+use super::geo_traits::*;
 use crate::numbers::eq_zero;
 use crate::PLANET;
 
@@ -22,14 +23,72 @@ pub struct Position {
     pub altitude_accuracy: Option<Length>,
 }
 
-impl Position {
-    pub fn new(geo: &GeoInfo) -> Self {
+impl<T: Coords + Altitude> From<&T> for Position {
+    fn from(x: &T) -> Self {
         Self {
-            coords: geo.coords,
-            altitude: geo.altitude,
-            accuracy: geo.accuracy,
-            altitude_accuracy: geo.altitude_accuracy,
+            coords: x.coords(),
+            altitude: x.altitude(),
+            accuracy: x.accuracy(),
+            altitude_accuracy: x.altitude_accuracy(),
         }
+    }
+}
+
+impl Coords for Position {
+    fn coords(&self) -> LatLong {
+        self.coords
+    }
+    fn accuracy(&self) -> Option<Length> {
+        self.accuracy
+    }
+}
+
+impl Altitude for Position {
+    fn altitude(&self) -> Option<Length> {
+        self.altitude
+    }
+    fn altitude_accuracy(&self) -> Option<Length> {
+        self.altitude_accuracy
+    }
+}
+
+/// A position with a timestamp.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PosWithTimestamp {
+    pub pos: Position,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl<T: RecordedPos> From<&T> for PosWithTimestamp {
+    fn from(x: &T) -> Self {
+        Self {
+            pos: x.into(),
+            timestamp: x.timestamp(),
+        }
+    }
+}
+
+impl Coords for PosWithTimestamp {
+    fn coords(&self) -> LatLong {
+        self.pos.coords()
+    }
+    fn accuracy(&self) -> Option<Length> {
+        self.pos.accuracy()
+    }
+}
+
+impl Altitude for PosWithTimestamp {
+    fn altitude(&self) -> Option<Length> {
+        self.pos.altitude()
+    }
+    fn altitude_accuracy(&self) -> Option<Length> {
+        self.pos.altitude_accuracy()
+    }
+}
+
+impl RecordedPos for PosWithTimestamp {
+    fn timestamp(&self) -> DateTime<Utc> {
+        self.timestamp
     }
 }
 
@@ -45,10 +104,40 @@ impl SavedPos {
     pub fn new(name: CompactString, geo: &GeoInfo) -> Self {
         Self {
             name,
-            pos: Position::new(geo),
+            pos: geo.into(),
             timestamp: geo.timestamp,
         }
     }
+}
+
+impl Coords for SavedPos {
+    fn coords(&self) -> LatLong {
+        self.pos.coords
+    }
+    fn accuracy(&self) -> Option<Length> {
+        self.pos.accuracy
+    }
+}
+
+impl Altitude for SavedPos {
+    fn altitude(&self) -> Option<Length> {
+        self.pos.altitude
+    }
+    fn altitude_accuracy(&self) -> Option<Length> {
+        self.pos.altitude_accuracy
+    }
+}
+
+impl RecordedPos for SavedPos {
+    fn timestamp(&self) -> DateTime<Utc> {
+        self.timestamp
+    }
+}
+
+/// Get a point passed to `RTree`.
+pub fn rtree_point<T: Coords>(pos: &T) -> [f64; 3] {
+    let nvec = pos.nvector().as_vec3();
+    [nvec.x(), nvec.y(), nvec.z()]
 }
 
 /// We implement RTreeObject for a position on the Earth's surface. (Ignoring altitude.)
@@ -64,22 +153,16 @@ impl SavedPos {
 impl RTreeObject for SavedPos {
     type Envelope = AABB<[f64; 3]>;
     fn envelope(&self) -> Self::Envelope {
-        AABB::from_point(rtree_point(self.pos.coords))
+        AABB::from_point(rtree_point(self))
     }
 }
 
 impl PointDistance for SavedPos {
     fn distance_2(&self, point: &[f64; 3]) -> f64 {
-        let me = rtree_point(self.pos.coords);
+        let me = rtree_point(self);
         let [x, y, z] = [me[0] - point[0], me[1] - point[1], me[2] - point[2]];
         return x * x + y * y + z * z;
     }
-}
-
-/// Get a point passed to `RTree`.
-pub fn rtree_point(coords: LatLong) -> [f64; 3] {
-    let nvec = coords.to_nvector().as_vec3();
-    [nvec.x(), nvec.y(), nvec.z()]
 }
 
 /// A line is actually a minor arc (or a geodesi) on the surface of the planet.
@@ -157,14 +240,14 @@ impl PointDistance for Line {
 
 /// A list of positions, preferably forming a natural path on the map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Way {
+pub struct Way<T> {
     /// An ordered list of positions.
-    nodes: Vec<Position>,
+    nodes: Vec<T>,
     /// The length of the way.
     length: Length,
 }
 
-impl Way {
+impl<T> Way<T> {
     pub fn new() -> Self {
         Self {
             nodes: vec![],
@@ -172,31 +255,32 @@ impl Way {
         }
     }
 
-    pub fn nodes(&self) -> &[Position] {
+    pub fn nodes(&self) -> &[T] {
         &self.nodes
     }
 
     pub fn length(&self) -> Length {
         self.length
     }
+}
 
+impl<T: Coords> Way<T> {
     /// Add a node to the end of the way.
-    pub fn append(&mut self, pos: Position) {
+    pub fn append(&mut self, pos: T) {
         if let Some(last) = self.nodes.last() {
-            self.length =
-                self.length + PLANET.distance(last.coords.to_nvector(), pos.coords.to_nvector());
+            self.length = self.length + PLANET.distance(last.nvector(), pos.nvector());
         }
         self.nodes.push(pos);
     }
 
     /// Insert a node at the specified index.
-    pub fn insert(&mut self, i: usize, pos: Position) {
+    pub fn insert(&mut self, i: usize, pos: T) {
         self.nodes.insert(i, pos);
         self.recompute_length()
     }
 
     /// Change a node at a certain index.
-    pub fn update(&mut self, i: usize, new_pos: Position) {
+    pub fn update(&mut self, i: usize, new_pos: T) {
         self.nodes[i] = new_pos;
         self.recompute_length();
     }
@@ -205,63 +289,62 @@ impl Way {
     fn recompute_length(&mut self) {
         self.length = Length::ZERO;
         for i in 1..self.nodes.len() {
-            self.length = self.length
-                + PLANET.distance(
-                    self.nodes[i - 1].coords.to_nvector(),
-                    self.nodes[i].coords.to_nvector(),
-                );
+            self.length =
+                self.length + PLANET.distance(self.nodes[i - 1].nvector(), self.nodes[i].nvector());
         }
     }
 }
 
-/// A way which is being recorded.
+/// A recorded way.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct RecordedWay {
-    pub way: Way,
-    /// Timestamps for each node in the way. Must be monotonically increasing.
-    pub timestamps: Vec<DateTime<Utc>>,
+    pub way: Way<PosWithTimestamp>,
 }
 
 impl RecordedWay {
     pub fn new() -> Self {
-        Self {
-            way: Way::new(),
-            timestamps: vec![],
-        }
+        Self { way: Way::new() }
+    }
+
+    pub fn way(&self) -> &Way<impl RecordedPos> {
+        &self.way
     }
 
     /// Add a point to the recording.
-    pub fn add(&mut self, geo: &GeoInfo) {
+    pub fn add(&mut self, pos: &impl RecordedPos) {
         if self
-            .timestamps
+            .way
+            .nodes()
             .last()
-            .map(|x| x < &geo.timestamp)
+            .map(|x| x.timestamp < pos.timestamp())
             .unwrap_or(true)
         {
-            self.timestamps.push(geo.timestamp);
-            self.way.append(Position::new(geo));
+            self.way.append(pos.into());
         } else {
-            match self.timestamps.binary_search(&geo.timestamp) {
+            match self
+                .way
+                .nodes()
+                .binary_search_by_key(&pos.timestamp(), RecordedPos::timestamp)
+            {
                 Err(i) => {
-                    self.timestamps.insert(i, geo.timestamp);
-                    self.way.insert(i, Position::new(geo));
+                    self.way.insert(i, pos.into());
                 }
                 Ok(i) => {
                     // A node with the same timestamp is already saved, so we will replace it.
-                    self.timestamps[i] = geo.timestamp;
-                    self.way.update(i, Position::new(geo));
+                    self.way.update(i, pos.into());
                 }
             }
         }
     }
 
     /// Get all positions since a certain timestamp. (Inclusive)
-    pub fn get_since(&self, timestamp: DateTime<Utc>) -> (&[Position], &[DateTime<Utc>]) {
+    pub fn get_since(&self, timestamp: DateTime<Utc>) -> &[PosWithTimestamp] {
         let i = self
-            .timestamps
-            .binary_search(&timestamp)
+            .way
+            .nodes()
+            .binary_search_by_key(&timestamp, RecordedPos::timestamp)
             .unwrap_or_else(|i| i);
-        (&self.way.nodes[i..], &self.timestamps[i..])
+        &self.way.nodes()[i..]
     }
 }
 
