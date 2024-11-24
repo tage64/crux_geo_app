@@ -90,11 +90,11 @@ impl Backend {
                 let response = TimeResponse::Now(Utc::now().try_into().unwrap());
                 self.process_effects(self.core.resolve(&mut request, response));
             }
-            TimeRequest::NotifyAfter(duration) => leptos::set_timeout(
+            TimeRequest::NotifyAfter { duration, id } => leptos::set_timeout(
                 move || {
                     self.process_effects(
                         self.core
-                            .resolve(&mut request, TimeResponse::DurationElapsed),
+                            .resolve(&mut request, TimeResponse::DurationElapsed { id }),
                     )
                 },
                 TryInto::<chrono::TimeDelta>::try_into(duration)
@@ -102,17 +102,18 @@ impl Backend {
                     .to_std()
                     .unwrap(),
             ),
-            TimeRequest::NotifyAt(duration) => leptos::set_timeout(
+            TimeRequest::NotifyAt { instant, id } => leptos::set_timeout(
                 move || {
                     self.process_effects(
                         self.core
-                            .resolve(&mut request, TimeResponse::DurationElapsed),
+                            .resolve(&mut request, TimeResponse::InstantArrived { id }),
                     )
                 },
-                (TryInto::<chrono::DateTime<Utc>>::try_into(duration).unwrap() - Utc::now())
+                (TryInto::<chrono::DateTime<Utc>>::try_into(instant).unwrap() - Utc::now())
                     .to_std()
                     .unwrap_or(std::time::Duration::ZERO),
             ),
+            TimeRequest::Clear { .. } => panic!("Operation not supported: TimeRequest::Clear"),
         }
     }
 
