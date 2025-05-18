@@ -9,9 +9,9 @@ use std::time::Duration;
 use crux_geolocation::{GeoOptions, GeoRequest, GeoResponse, Position};
 use leptos::signal_prelude::*;
 use leptos::{
-    create_effect, leptos_dom::helpers::TimeoutHandle, set_timeout_with_handle, web_sys, Effect,
+    Effect, create_effect, leptos_dom::helpers::TimeoutHandle, set_timeout_with_handle, web_sys,
 };
-use leptos_use::{use_geolocation_with_options, UseGeolocationOptions, UseGeolocationReturn};
+use leptos_use::{UseGeolocationOptions, UseGeolocationReturn, use_geolocation_with_options};
 use shared::Request;
 
 use super::Backend;
@@ -113,7 +113,8 @@ impl GeoWatch {
             };
             let effects = backend
                 .core
-                .resolve(&mut request.borrow_mut(), geo_response);
+                .resolve(&mut request.borrow_mut(), geo_response)
+                .unwrap();
             backend.process_effects(effects);
         });
     }

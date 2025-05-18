@@ -2,15 +2,15 @@ mod geo_traits;
 mod geo_types;
 pub mod view_types;
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::time::Duration;
 
 use chrono::prelude::*;
-use compact_str::{format_compact, CompactString, ToCompactString};
-use crux_core::{render::Render, App};
+use compact_str::{CompactString, ToCompactString, format_compact};
+use crux_core::{App, Command, render::Render};
 use crux_geolocation::{GeoInfo, GeoOptions, GeoResult, Geolocation};
-use crux_kv::{error::KeyValueError, KeyValue};
+use crux_kv::{KeyValue, error::KeyValueError};
 use crux_time::{Time, TimeResponse};
-use geo_types::{rtree_point, RecordedWay, SavedPos};
+use geo_types::{RecordedWay, SavedPos, rtree_point};
 use jord::spherical::Sphere;
 use rstar::RTree;
 use serde::{Deserialize, Serialize};
@@ -75,8 +75,7 @@ pub enum Event {
 /// The planet we want to navigate on.
 pub const PLANET: Sphere = Sphere::EARTH;
 
-static UPDATE_CURR_TIME_INTERVAL: LazyLock<crux_time::Duration> =
-    LazyLock::new(|| crux_time::Duration::from_secs(1).unwrap());
+const UPDATE_CURR_TIME_INTERVAL: Duration = Duration::from_secs(1);
 const GEOLOCATION_OPTIONS: GeoOptions = GeoOptions {
     maximum_age: 0,
     timeout: Some(27000),
@@ -140,9 +139,15 @@ impl App for GeoApp {
     type Model = Model;
     type ViewModel = ViewModel;
     type Capabilities = Capabilities;
+    type Effect = Effect;
 
     #[allow(unused_variables)]
-    fn update(&self, event: Self::Event, model: &mut Self::Model, caps: &Self::Capabilities) {
+    fn update(
+        &self,
+        event: Self::Event,
+        model: &mut Self::Model,
+        caps: &Self::Capabilities,
+    ) -> Command<Effect, Event> {
         match event {
             // Geolocation
             Event::StartGeolocation => {
@@ -254,13 +259,13 @@ impl App for GeoApp {
             // Time
             Event::UpdateCurrTime => {
                 caps.time.now(|x| {
-                    let TimeResponse::Now(x) = x else {
+                    let TimeResponse::Now { instant } = x else {
                         unreachable!()
                     };
-                    Event::SetCurrTime(x)
+                    Event::SetCurrTime(instant)
                 });
                 caps.time
-                    .notify_after(*UPDATE_CURR_TIME_INTERVAL, |_| Event::UpdateCurrTime);
+                    .notify_after(UPDATE_CURR_TIME_INTERVAL, |_| Event::UpdateCurrTime);
             }
             Event::SetCurrTime(time) => {
                 model.curr_time = Some(time.try_into().unwrap());
@@ -269,6 +274,8 @@ impl App for GeoApp {
             Event::None => (),
         }
         caps.render.render();
+
+        Command::done()
     }
 
     fn view(&self, model: &Self::Model) -> Self::ViewModel {

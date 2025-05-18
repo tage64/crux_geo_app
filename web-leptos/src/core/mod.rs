@@ -6,11 +6,11 @@ use std::rc::Rc;
 
 use chrono::Utc;
 use crux_geolocation::{GeoOptions, GeoRequest};
-use crux_kv::{value::Value, KeyValueOperation, KeyValueResponse, KeyValueResult};
+use crux_kv::{KeyValueOperation, KeyValueResponse, KeyValueResult, value::Value};
 use crux_time::{TimeRequest, TimeResponse};
 use leptos::signal_prelude::*;
 use leptos::watch;
-use shared::{view_types::ViewModel, Effect, Event, FileDownloadRequest, GeoApp, Request};
+use shared::{Effect, Event, FileDownloadRequest, GeoApp, Request, view_types::ViewModel};
 
 /// Signals to send events to and get the last view model from the app.
 #[derive(Clone, Copy)]
@@ -26,7 +26,7 @@ pub struct App {
 /// A backend struct for the app.
 struct Backend {
     /// The core of the app.
-    core: shared::Core<Effect, GeoApp>,
+    core: shared::Core<GeoApp>,
     /// Signal where new view models are sent from the core.
     render: WriteSignal<Rc<ViewModel>>,
     /// Signal to receive events that should be sent to the core.
@@ -87,14 +87,17 @@ impl Backend {
     fn process_time(self: Rc<Self>, mut request: Request<TimeRequest>) {
         match request.operation {
             TimeRequest::Now => {
-                let response = TimeResponse::Now(Utc::now().try_into().unwrap());
-                self.process_effects(self.core.resolve(&mut request, response));
+                let response = TimeResponse::Now {
+                    instant: Utc::now().try_into().unwrap(),
+                };
+                self.process_effects(self.core.resolve(&mut request, response).unwrap());
             }
             TimeRequest::NotifyAfter { duration, id } => leptos::set_timeout(
                 move || {
                     self.process_effects(
                         self.core
-                            .resolve(&mut request, TimeResponse::DurationElapsed { id }),
+                            .resolve(&mut request, TimeResponse::DurationElapsed { id })
+                            .unwrap(),
                     )
                 },
                 TryInto::<chrono::TimeDelta>::try_into(duration)
@@ -106,7 +109,8 @@ impl Backend {
                 move || {
                     self.process_effects(
                         self.core
-                            .resolve(&mut request, TimeResponse::InstantArrived { id }),
+                            .resolve(&mut request, TimeResponse::InstantArrived { id })
+                            .unwrap(),
                     )
                 },
                 (TryInto::<chrono::DateTime<Utc>>::try_into(instant).unwrap() - Utc::now())
@@ -126,7 +130,7 @@ impl Backend {
                 let response = KeyValueResult::Ok {
                     response: KeyValueResponse::Get { value },
                 };
-                self.process_effects(self.core.resolve(&mut request, response));
+                self.process_effects(self.core.resolve(&mut request, response).unwrap());
             }
             KeyValueOperation::Set { key, value } => {
                 storage::set(key, value);
@@ -135,7 +139,7 @@ impl Backend {
                         previous: Value::None,
                     },
                 };
-                self.process_effects(self.core.resolve(&mut request, response));
+                self.process_effects(self.core.resolve(&mut request, response).unwrap());
             }
             KeyValueOperation::Delete { key } => {
                 storage::delete(key);
@@ -144,14 +148,14 @@ impl Backend {
                         previous: Value::None,
                     },
                 };
-                self.process_effects(self.core.resolve(&mut request, response));
+                self.process_effects(self.core.resolve(&mut request, response).unwrap());
             }
             KeyValueOperation::Exists { key } => {
                 let is_present = storage::get(key).is_some();
                 let response = KeyValueResult::Ok {
                     response: KeyValueResponse::Exists { is_present },
                 };
-                self.process_effects(self.core.resolve(&mut request, response));
+                self.process_effects(self.core.resolve(&mut request, response).unwrap());
             }
             KeyValueOperation::ListKeys { .. } => unimplemented!(),
         }

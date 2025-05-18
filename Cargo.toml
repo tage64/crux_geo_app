@@ -5,8 +5,7 @@ members = [ "crux_geolocation", "shared", "web-leptos"]
 
 [workspace.package]
 authors = ["Tage Johansson"]
-edition = "2021"
-#repository = "https://github.com/redbadger/crux/"
+edition = "2024"
 license = "AGPL-3.0-or-later"
 license-file = "LICENSE"
 keywords = ["crux", "crux_core", "cross-platform-ui", "ffi", "wasm"]
@@ -14,8 +13,8 @@ keywords = ["crux", "crux_core", "cross-platform-ui", "ffi", "wasm"]
 [workspace.dependencies]
 chrono = { version = "0.4.41", features = ["serde"] }
 compact_str = { version = "0.9.0", features = ["serde"] }
-crux_core = "0.10.0"
-crux_kv = "0.5.2"
-crux_time = { version = "0.6.0", features = ["chrono"] }
+crux_core = "0.14.0"
+crux_kv = "0.8.0"
+crux_time = { version = "0.12.0", features = ["chrono"] }
 jord = { version = "0.15.0", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
