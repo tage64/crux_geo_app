@@ -6,17 +6,17 @@ use std::time::Duration;
 
 use chrono::prelude::*;
 use compact_str::{CompactString, ToCompactString, format_compact};
-use crux_core::{App, Command, render::Render};
-use crux_geolocation::{GeoInfo, GeoOptions, GeoResult, Geolocation};
-use crux_kv::{KeyValue, error::KeyValueError};
-use crux_time::{Time, TimeResponse};
+use crux_core::{App, Command, macros::effect, render::RenderOperation};
+use crux_geolocation::{GeoInfo, GeoOptions, GeoRequest, GeoResult};
+use crux_kv::{KeyValueOperation, command::KeyValue, error::KeyValueError};
+use crux_time::{TimeRequest, TimeResponse};
 use geo_types::{RecordedWay, SavedPos, rtree_point};
 use jord::spherical::Sphere;
 use rstar::RTree;
 use serde::{Deserialize, Serialize};
 use view_types::ViewModel;
 
-use crate::FileDownload;
+use crate::FileDownloadRequest;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Event {
@@ -121,14 +121,13 @@ pub struct Model {
     curr_time: Option<DateTime<Utc>>,
 }
 
-#[cfg_attr(feature = "typegen", derive(crux_core::macros::Export))]
-#[derive(crux_core::macros::Effect)]
-pub struct Capabilities {
-    render: Render<Event>,
-    storage: KeyValue<Event>,
-    time: Time<Event>,
-    geolocation: Geolocation<Event>,
-    file_download: FileDownload<Event>,
+#[effect(typegen)]
+pub enum Effect {
+    Render(RenderOperation),
+    Storage(KeyValueOperation),
+    Time(TimeRequest),
+    Geolocation(GeoRequest),
+    FileDownload(FileDownloadRequest),
 }
 
 #[derive(Default)]
@@ -138,15 +137,15 @@ impl App for GeoApp {
     type Event = Event;
     type Model = Model;
     type ViewModel = ViewModel;
-    type Capabilities = Capabilities;
     type Effect = Effect;
+    type Capabilities = (); // FIXME: Depricated and will be removed.
 
     #[allow(unused_variables)]
     fn update(
         &self,
         event: Self::Event,
         model: &mut Self::Model,
-        caps: &Self::Capabilities,
+        _caps: &Self::Capabilities,
     ) -> Command<Effect, Event> {
         match event {
             // Geolocation
@@ -170,10 +169,10 @@ impl App for GeoApp {
             }
 
             // Persistant Data
-            Event::LoadPersistantData => {
-                self.load_persistant_data(caps, SAVED_POSITIONS_KEY);
-                self.load_persistant_data(caps, RECORDED_WAYS_KEY);
-            }
+            Event::LoadPersistantData => Command::all([
+                self.load_persistant_data(SAVED_POSITIONS_KEY),
+                self.load_persistant_data(RECORDED_WAYS_KEY),
+            ]),
             Event::SetData { res, key } => {
                 if let Err(e) = self.set_data(model, caps, res, key) {
                     model.msg = e;
@@ -284,12 +283,11 @@ impl App for GeoApp {
 }
 
 impl GeoApp {
-    fn load_persistant_data(&self, caps: &Capabilities, key: &'static str) {
-        caps.storage
-            .get(key.to_string(), move |res| Event::SetData {
-                res,
-                key: key.to_compact_string(),
-            });
+    fn load_persistant_data(&self, key: &'static str) -> Command<Effect, Event> {
+        KeyValue::get(key).then_send(move |res| Event::SetData {
+            res,
+            key: key.to_compact_string(),
+        })
     }
 
     /// Set data from persistant storage.

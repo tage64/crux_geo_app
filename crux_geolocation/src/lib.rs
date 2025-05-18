@@ -1,8 +1,13 @@
 use chrono::{DateTime, Utc};
-use crux_core::capability::{CapabilityContext, Operation};
-use futures::{Stream, StreamExt as _};
+use crux_core::{
+    Request,
+    capability::Operation,
+    command::{Command, NotificationBuilder, StreamBuilder},
+};
+use futures::Stream;
 use jord::{Angle, LatLong, Length, Speed};
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 
 /// The coordinates, altitude, speed and bearing of a device. (This type is used only by the shell
 /// and not the app.)
@@ -58,7 +63,7 @@ pub struct GeoOptions {
 /// A position operation.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum GeoRequest {
+pub enum GeoOperation {
     WatchPosition(GeoOptions),
     ClearWatch,
 }
@@ -95,7 +100,7 @@ pub enum GeoResponse {
     TimeoutError,
 }
 
-impl Operation for GeoRequest {
+impl Operation for GeoOperation {
     type Output = GeoResponse;
 }
 
@@ -128,98 +133,32 @@ pub struct GeoInfo {
 ///
 /// This capability provides access to the current location and allows the app to watch position
 /// updates.
-pub struct Geolocation<Ev> {
-    context: CapabilityContext<GeoRequest, Ev>,
+#[derive(Clone)]
+pub struct Geolocation<Effect, Event> {
+    effect: PhantomData<Effect>,
+    event: PhantomData<Event>,
 }
 
-impl<Ev> Clone for Geolocation<Ev> {
-    fn clone(&self) -> Self {
-        Self {
-            context: self.context.clone(),
-        }
-    }
-}
-
-impl<Ev> crux_core::Capability<Ev> for Geolocation<Ev> {
-    type Operation = GeoRequest;
-    type MappedSelf<MappedEv> = Geolocation<MappedEv>;
-
-    fn map_event<F, NewEv>(&self, f: F) -> Self::MappedSelf<NewEv>
-    where
-        F: Fn(NewEv) -> Ev + Send + Sync + 'static,
-        Ev: 'static,
-        NewEv: 'static + Send,
-    {
-        Geolocation::new(self.context.map_event(f))
-    }
-
-    #[cfg(feature = "typegen")]
-    fn register_types(
-        generator: &mut crux_core::typegen::TypeGen,
-    ) -> crux_core::typegen::GeoResult {
-        generator.register_type::<Position>()?;
-        generator.register_type::<GeoOptions>()?;
-        generator.register_type::<GeoError>()?;
-        generator.register_type::<Self::Operation>()?;
-        generator.register_type::<<Self::Operation as Operation>::Output>()?;
-        Ok(())
-    }
-}
-impl<Ev> Geolocation<Ev>
+impl<Effect, Event> Geolocation<Effect, Event>
 where
-    Ev: 'static,
+    Effect: Send + From<Request<GeoOperation>> + 'static,
+    Event: Send + 'static,
 {
-    pub fn new(context: CapabilityContext<GeoRequest, Ev>) -> Self {
-        Self { context }
-    }
-
     /// Watch the current position and stream when the position changes.
     ///
     /// Any existing watch will be cleared.
-    pub fn watch_position<F>(&self, options: GeoOptions, mut callback: F)
-    where
-        F: FnMut(GeoResult<GeoInfo>) -> Ev + Send + Sync + 'static,
-    {
-        self.context.spawn({
-            let context = self.context.clone();
-            let this = self.clone();
-
-            async move {
-                this.watch_position_async(options)
-                    .await
-                    .map(|x| context.update_app(callback(x)))
-                    .collect::<()>()
-                    .await;
-            }
-        });
-    }
-
-    /// Request the current position.
-    ///
-    /// This is an async call to use with [`crux_core::compose::Compose`].
-    pub async fn watch_position_async(
+    pub fn watch_position(
         &self,
         options: GeoOptions,
-    ) -> impl Stream<Item = GeoResult<GeoInfo>> {
-        self.context
-            .stream_from_shell(GeoRequest::WatchPosition(options))
-            .map(response_to_geo_info)
-    }
-
-    /// Cancel any existing position watcher.
-    pub fn clear_watch(&self) {
-        self.context.spawn({
-            let this = self.clone();
-            async move { this.clear_watch_async().await }
-        });
+    ) -> StreamBuilder<Effect, Event, impl Stream<Item = GeoResult<GeoInfo>>> {
+        Command::stream_from_shell(GeoOperation::WatchPosition(options)).map(response_to_geo_info)
     }
 
     /// Cancel any existing position watcher.
     ///
     /// If no watcher is active, this method does nothing.
-    /// This is an async call to use with [`crux_core::compose::Compose`].
-    pub async fn clear_watch_async(&self) {
-        self.context.notify_shell(GeoRequest::ClearWatch).await
+    pub fn clear_watch(&self) -> NotificationBuilder<Effect, Event, impl Future<Output = ()>> {
+        Command::notify_shell(GeoOperation::ClearWatch)
     }
 }
 
