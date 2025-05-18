@@ -12,10 +12,10 @@ license-file = "LICENSE"
 keywords = ["crux", "crux_core", "cross-platform-ui", "ffi", "wasm"]
 
 [workspace.dependencies]
-chrono = { version = "0.4.38", features = ["serde"] }
-compact_str = { version = "0.8.0", features = ["serde"] }
+chrono = { version = "0.4.41", features = ["serde"] }
+compact_str = { version = "0.9.0", features = ["serde"] }
 crux_core = "0.10.0"
 crux_kv = "0.5.2"
 crux_time = { version = "0.6.0", features = ["chrono"] }
-jord = { git = "https://github.com/ofmooseandmen/jord-rs", version = "0.15.0", features = ["serde"] }
-serde = { version = "1.0.209", features = ["derive"] }
+jord = { version = "0.15.0", features = ["serde"] }
+serde = { version = "1.0.219", features = ["derive"] }
