@@ -2,21 +2,28 @@ mod geo_traits;
 mod geo_types;
 pub mod view_types;
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use chrono::prelude::*;
 use compact_str::{CompactString, ToCompactString, format_compact};
-use crux_core::{App, Command, macros::effect, render::RenderOperation};
-use crux_geolocation::{GeoInfo, GeoOptions, GeoRequest, GeoResult};
+use crux_core::{
+    App, Command,
+    macros::effect,
+    render::{RenderOperation, render},
+};
+use crux_geolocation::{GeoInfo, GeoOperation, GeoOptions, GeoResult, Geolocation};
 use crux_kv::{KeyValueOperation, command::KeyValue, error::KeyValueError};
-use crux_time::{TimeRequest, TimeResponse};
+use crux_time::{
+    TimeRequest,
+    command::{Time, TimerOutcome},
+};
 use geo_types::{RecordedWay, SavedPos, rtree_point};
 use jord::spherical::Sphere;
 use rstar::RTree;
 use serde::{Deserialize, Serialize};
 use view_types::ViewModel;
 
-use crate::FileDownloadRequest;
+use crate::FileDownloadOperation;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Event {
@@ -62,7 +69,7 @@ pub enum Event {
     #[serde(skip)]
     UpdateCurrTime,
     /// Set `Model::curr_time`.
-    SetCurrTime(crux_time::Instant),
+    SetCurrTime(SystemTime),
 
     // Miscellaneous
     /// A message which should be displayed to the user.
@@ -126,8 +133,8 @@ pub enum Effect {
     Render(RenderOperation),
     Storage(KeyValueOperation),
     Time(TimeRequest),
-    Geolocation(GeoRequest),
-    FileDownload(FileDownloadRequest),
+    Geolocation(GeoOperation),
+    FileDownload(FileDownloadOperation),
 }
 
 #[derive(Default)]
@@ -145,16 +152,14 @@ impl App for GeoApp {
         &self,
         event: Self::Event,
         model: &mut Self::Model,
-        _caps: &Self::Capabilities,
+        _: &Self::Capabilities, // Deprecated argument
     ) -> Command<Effect, Event> {
-        match event {
+        let action = match event {
             // Geolocation
-            Event::StartGeolocation => {
-                caps.geolocation
-                    .watch_position(GEOLOCATION_OPTIONS, Event::GeolocationUpdate);
-                self.update(Event::UpdateCurrTime, model, caps);
-            }
-            Event::StopGeolocation => caps.geolocation.clear_watch(),
+            Event::StartGeolocation => Geolocation::watch_position(GEOLOCATION_OPTIONS)
+                .then_send(Event::GeolocationUpdate)
+                .and(Command::event(Event::UpdateCurrTime)),
+            Event::StopGeolocation => Geolocation::clear_watch().into(),
             Event::GeolocationUpdate(geo_result) => {
                 model.curr_pos = Some(geo_result.clone());
                 if let Ok(geo_info) = geo_result {
@@ -166,6 +171,8 @@ impl App for GeoApp {
                         model.all_positions = Some(rec);
                     }
                 }
+
+                Command::done()
             }
 
             // Persistant Data
@@ -174,20 +181,22 @@ impl App for GeoApp {
                 self.load_persistant_data(RECORDED_WAYS_KEY),
             ]),
             Event::SetData { res, key } => {
-                if let Err(e) = self.set_data(model, caps, res, key) {
+                if let Err(e) = self.set_data(model, res, key) {
                     model.msg = e;
                 }
+                Command::done()
             }
             Event::DownloadData => {
                 let json = serde_json::json!({
                     SAVED_POSITIONS_KEY: (&model.saved_positions, &model.saved_positions_names),
                     RECORDED_WAYS_KEY: &model.recorded_ways,
                 });
-                caps.file_download.file_download(
-                    serde_json::to_vec(&json).unwrap(),
-                    Some("geosuper_data.json"),
-                    Some("application/json"),
-                );
+                Command::notify_shell(FileDownloadOperation {
+                    content: serde_json::to_vec(&json).unwrap(),
+                    file_name: Some("geosuper_data.json".into()),
+                    mime_type: Some("application/json".into()),
+                })
+                .into()
             }
 
             // Saved Positions
@@ -196,32 +205,36 @@ impl App for GeoApp {
                     if model.saved_positions_names.contains_key(&name) {
                         model.msg =
                             format_compact!("Error: There is already a position named {name}");
+                        Command::done()
                     } else {
                         let pos = SavedPos::new(name.clone(), geo);
                         model.saved_positions.insert(pos.clone());
                         model.saved_positions_names.insert(name, pos);
                         // Update `model.view_saved_positions`.
-                        self.view_saved_positions(model, caps);
-                        self.save_saved_positions(model, caps);
+                        self.view_saved_positions(model);
+                        self.save_saved_positions(model)
                     }
                 } else {
                     model.msg = "Error: The current position is not known.".into();
+                    Command::done()
                 }
             }
             Event::DelSavedPos(name) => {
                 if let Some(pos) = model.saved_positions_names.remove(&name) {
                     model.saved_positions.remove(&pos);
                     // Update `model.view_saved_positions`.
-                    self.view_saved_positions(model, caps);
-                    self.save_saved_positions(model, caps);
+                    self.view_saved_positions(model);
                     model.msg = format_compact!("{name} has been removed.");
+                    self.save_saved_positions(model)
                 } else {
                     model.msg = format_compact!("Error: Position {name} does not exist.");
+                    Command::done()
                 }
             }
             Event::ViewNSavedPositions(n) => {
                 model.view_n_saved_positions = n;
-                self.view_saved_positions(model, caps);
+                self.view_saved_positions(model);
+                Command::done()
             }
 
             // Recorded Ways
@@ -229,52 +242,57 @@ impl App for GeoApp {
                 if let Some(all_positions) = &model.all_positions {
                     if model.recorded_ways.contains_key(&name) {
                         model.msg = format_compact!("Error: The name {name} is already in use.");
+                        Command::done()
                     } else {
                         model.recorded_ways.insert(name, all_positions.clone());
-                        self.view_recorded_ways(model, caps);
-                        self.save_recorded_ways(model, caps);
+                        self.view_recorded_ways(model);
+                        self.save_recorded_ways(model)
                     }
                 } else {
                     model.msg = format_compact!("Error: No positions recorded.");
+                    Command::done()
                 }
             }
             Event::DelRecordedWay(name) => {
                 if let Some(way) = model.recorded_ways.remove(&name) {
                     // Update `model.view_recorded_ways`.
-                    self.view_recorded_ways(model, caps);
-                    self.save_recorded_ways(model, caps);
+                    self.view_recorded_ways(model);
                     model.msg = format_compact!("{name} has been removed.");
+                    self.save_recorded_ways(model)
                 } else {
                     model.msg = format_compact!("Error: Way {name} does not exist.");
+                    Command::done()
                 }
             }
             Event::ViewNRecordedWays(n) => {
                 model.view_n_recorded_ways = n;
-                self.view_recorded_ways(model, caps);
+                self.view_recorded_ways(model);
+                Command::done()
             }
 
-            Event::Msg(msg) => model.msg = msg,
+            Event::Msg(msg) => {
+                model.msg = msg;
+                Command::done()
+            }
 
             // Time
-            Event::UpdateCurrTime => {
-                caps.time.now(|x| {
-                    let TimeResponse::Now { instant } = x else {
-                        unreachable!()
-                    };
-                    Event::SetCurrTime(instant)
-                });
-                caps.time
-                    .notify_after(UPDATE_CURR_TIME_INTERVAL, |_| Event::UpdateCurrTime);
-            }
+            Event::UpdateCurrTime => Time::now().then_send(Event::SetCurrTime).then(
+                Time::notify_after(UPDATE_CURR_TIME_INTERVAL)
+                    .0
+                    .then_send(|x| match x {
+                        TimerOutcome::Completed(_) => Event::UpdateCurrTime,
+                        TimerOutcome::Cleared => unreachable!(),
+                    }),
+            ),
             Event::SetCurrTime(time) => {
-                model.curr_time = Some(time.try_into().unwrap());
+                model.curr_time = Some(time.into());
+                Command::done()
             }
 
-            Event::None => (),
-        }
-        caps.render.render();
+            Event::None => Command::done(),
+        };
 
-        Command::done()
+        action.then(render())
     }
 
     fn view(&self, model: &Self::Model) -> Self::ViewModel {
@@ -283,6 +301,7 @@ impl App for GeoApp {
 }
 
 impl GeoApp {
+    /// Get data from persistant storage.
     fn load_persistant_data(&self, key: &'static str) -> Command<Effect, Event> {
         KeyValue::get(key).then_send(move |res| Event::SetData {
             res,
@@ -290,11 +309,10 @@ impl GeoApp {
         })
     }
 
-    /// Set data from persistant storage.
+    /// Set data received from persistant storage.
     fn set_data(
         &self,
         model: &mut Model,
-        caps: &Capabilities,
         res: Result<Option<Vec<u8>>, KeyValueError>,
         key: CompactString,
     ) -> Result<(), CompactString> {
@@ -306,7 +324,7 @@ impl GeoApp {
                 model.saved_positions = rtree;
                 model.saved_positions_names = names;
                 // Update `model.view_saved_positions`.
-                self.view_saved_positions(model, caps);
+                self.view_saved_positions(model);
             }
             (Ok(Some(bytes)), key) if key == RECORDED_WAYS_KEY => {
                 let recorded_ways = bincode::deserialize(bytes.as_slice()).map_err(|e| {
@@ -314,7 +332,7 @@ impl GeoApp {
                 })?;
                 model.recorded_ways = recorded_ways;
                 // Update `model.view_recorded_ways`.
-                self.view_recorded_ways(model, caps);
+                self.view_recorded_ways(model);
             }
             (Ok(Some(_)), key) => panic!("Bad key: {key}"),
             (Ok(None), _) => (),
@@ -327,40 +345,40 @@ impl GeoApp {
         Ok(())
     }
 
-    fn save_saved_positions(&self, model: &mut Model, caps: &Capabilities) {
-        caps.storage.set(
-            SAVED_POSITIONS_KEY.to_string(),
+    fn save_saved_positions(&self, model: &mut Model) -> Command<Effect, Event> {
+        KeyValue::set(
+            SAVED_POSITIONS_KEY,
             bincode::serialize(&(&model.saved_positions, &model.saved_positions_names)).unwrap(),
-            |res| {
-                if let Err(e) = res {
-                    Event::Msg(format_compact!(
-                        "Internal Error: Failed to serialize saved_positions: {e}"
-                    ))
-                } else {
-                    Event::None
-                }
-            },
-        );
+        )
+        .then_send(|res| {
+            if let Err(e) = res {
+                Event::Msg(format_compact!(
+                    "Internal Error: Failed to serialize saved_positions: {e}"
+                ))
+            } else {
+                Event::None
+            }
+        })
     }
 
-    fn save_recorded_ways(&self, model: &mut Model, caps: &Capabilities) {
-        caps.storage.set(
+    fn save_recorded_ways(&self, model: &mut Model) -> Command<Effect, Event> {
+        KeyValue::set(
             RECORDED_WAYS_KEY.to_string(),
             bincode::serialize(&model.recorded_ways).unwrap(),
-            |res| {
-                if let Err(e) = res {
-                    Event::Msg(format_compact!(
-                        "Internal Error: Failed to serialize recorded_ways: {e}"
-                    ))
-                } else {
-                    Event::None
-                }
-            },
-        );
+        )
+        .then_send(|res| {
+            if let Err(e) = res {
+                Event::Msg(format_compact!(
+                    "Internal Error: Failed to serialize recorded_ways: {e}"
+                ))
+            } else {
+                Event::None
+            }
+        })
     }
 
     /// Select the saved positions to view.
-    fn view_saved_positions(&self, model: &mut Model, _caps: &Capabilities) {
+    fn view_saved_positions(&self, model: &mut Model) {
         model.view_saved_positions = if let Some(Ok(curr_pos)) = &model.curr_pos {
             model
                 .saved_positions
@@ -379,7 +397,7 @@ impl GeoApp {
     }
 
     /// Select recorded ways to show.
-    fn view_recorded_ways(&self, model: &mut Model, _caps: &Capabilities) {
+    fn view_recorded_ways(&self, model: &mut Model) {
         // TODO: Use an algorithm to select the n nearest ways.
         model.view_recorded_ways = model
             .recorded_ways

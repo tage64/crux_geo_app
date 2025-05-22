@@ -148,7 +148,6 @@ where
     ///
     /// Any existing watch will be cleared.
     pub fn watch_position(
-        &self,
         options: GeoOptions,
     ) -> StreamBuilder<Effect, Event, impl Stream<Item = GeoResult<GeoInfo>>> {
         Command::stream_from_shell(GeoOperation::WatchPosition(options)).map(response_to_geo_info)
@@ -157,7 +156,7 @@ where
     /// Cancel any existing position watcher.
     ///
     /// If no watcher is active, this method does nothing.
-    pub fn clear_watch(&self) -> NotificationBuilder<Effect, Event, impl Future<Output = ()>> {
+    pub fn clear_watch() -> NotificationBuilder<Effect, Event, impl Future<Output = ()>> {
         Command::notify_shell(GeoOperation::ClearWatch)
     }
 }
