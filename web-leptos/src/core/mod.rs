@@ -5,12 +5,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use chrono::Utc;
-use crux_geolocation::{GeoOptions, GeoRequest};
+use crux_geolocation::{GeoOperation, GeoOptions};
 use crux_kv::{KeyValueOperation, KeyValueResponse, KeyValueResult, value::Value};
 use crux_time::{TimeRequest, TimeResponse};
 use leptos::signal_prelude::*;
 use leptos::watch;
-use shared::{Effect, Event, FileDownloadRequest, GeoApp, Request, view_types::ViewModel};
+use shared::{Effect, Event, FileDownloadOperation, GeoApp, Request, view_types::ViewModel};
 
 /// Signals to send events to and get the last view model from the app.
 #[derive(Clone, Copy)]
@@ -20,7 +20,7 @@ pub struct App {
     /// Signal to send events to the app.
     pub set_event: WriteSignal<Event>,
     /// Signal to receive a `FileDownloadRequest`.
-    pub file_download: RwSignal<Option<FileDownloadRequest>>,
+    pub file_download: RwSignal<Option<FileDownloadOperation>>,
 }
 
 /// A backend struct for the app.
@@ -32,7 +32,7 @@ struct Backend {
     /// Signal to receive events that should be sent to the core.
     event: ReadSignal<Event>,
     /// Signal to set a file download request.
-    set_file_download: WriteSignal<Option<FileDownloadRequest>>,
+    set_file_download: WriteSignal<Option<FileDownloadOperation>>,
     /// A possible current watch on the geolocation API.
     geo_watch: WriteSignal<geolocation::Event>,
 }
@@ -76,7 +76,7 @@ impl Backend {
                     self.render.set(Rc::new(self.core.view()));
                 }
                 Effect::Time(req) => self.clone().process_time(req),
-                Effect::KeyValue(req) => self.process_storage(req),
+                Effect::Storage(req) => self.process_storage(req),
                 Effect::Geolocation(req) => self.process_geolocation(req),
                 Effect::FileDownload(req) => self.set_file_download.set(Some(req.operation)),
             }
@@ -162,14 +162,14 @@ impl Backend {
     }
 
     /// Process a geolocation request from the core.
-    fn process_geolocation(self: &Rc<Self>, req: Request<GeoRequest>) {
+    fn process_geolocation(self: &Rc<Self>, req: Request<GeoOperation>) {
         match req.operation {
-            GeoRequest::WatchPosition(opts) => self.geo_watch.set(geolocation::Event::Watch {
+            GeoOperation::WatchPosition(opts) => self.geo_watch.set(geolocation::Event::Watch {
                 backend: self.clone(),
                 req: Rc::new(RefCell::new(req)),
                 opts,
             }),
-            GeoRequest::ClearWatch => self.geo_watch.set(geolocation::Event::Stop),
+            GeoOperation::ClearWatch => self.geo_watch.set(geolocation::Event::Stop),
         }
     }
 }

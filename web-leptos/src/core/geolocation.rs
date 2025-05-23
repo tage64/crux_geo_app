@@ -6,7 +6,7 @@ use std::cmp;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crux_geolocation::{GeoOptions, GeoRequest, GeoResponse, Position};
+use crux_geolocation::{GeoOperation, GeoOptions, GeoResponse, Position};
 use leptos::signal_prelude::*;
 use leptos::{
     Effect, create_effect, leptos_dom::helpers::TimeoutHandle, set_timeout_with_handle, web_sys,
@@ -22,7 +22,7 @@ pub enum Event {
     Watch {
         backend: Rc<Backend>,
         /// Wrapped in Rc to facilitate cloning.
-        req: Rc<RefCell<Request<GeoRequest>>>,
+        req: Rc<RefCell<Request<GeoOperation>>>,
         opts: GeoOptions,
     },
     Stop,
@@ -69,7 +69,7 @@ impl GeoWatch {
         self_: Rc<RefCell<Self>>,
         set_event: WriteSignal<Event>,
         backend: Rc<Backend>,
-        request: Rc<RefCell<Request<GeoRequest>>>,
+        request: Rc<RefCell<Request<GeoOperation>>>,
         opts: GeoOptions,
     ) {
         let n_retries = if let Self::Retry { n, .. } = &*self_.borrow() {
