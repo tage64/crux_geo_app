@@ -7,7 +7,7 @@
 
 use base64::prelude::*;
 use codee::{Decoder, Encoder};
-use leptos::signal_prelude::*;
+use leptos::prelude::*;
 use leptos_use::storage::use_local_storage;
 
 /// A base64 encoder/decoder.
@@ -35,20 +35,20 @@ impl Decoder<Vec<u8>> for Base64Codee {
 }
 
 /// Get a value from persistant storage.
-pub fn get(key: impl AsRef<str>) -> Option<Vec<u8>> {
+pub fn get(key: String) -> Option<Vec<u8>> {
     let (get_signal, _, _) = use_local_storage::<_, Base64Codee>(key);
     let value = get_signal.get();
     if value.is_empty() { None } else { Some(value) }
 }
 
 /// Set a value to persistant storage.
-pub fn set(key: impl AsRef<str>, value: Vec<u8>) {
+pub fn set(key: String, value: Vec<u8>) {
     let (_, set_signal, _) = use_local_storage::<_, Base64Codee>(key);
     set_signal.set(value);
 }
 
 /// Delete from persistant storage.
-pub fn delete(key: impl AsRef<str>) {
+pub fn delete(key: String) {
     let (_, _, delete_fn) = use_local_storage::<_, Base64Codee>(key);
     delete_fn();
 }

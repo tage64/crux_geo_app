@@ -1,16 +1,13 @@
 //! Interface to the
 //! [Geolocation Web API](https://developer.mozilla.org/en-US/docs/Web/API/Geolocation_API)
 //! using leptos_use.
-use std::cell::RefCell;
 use std::cmp;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crux_geolocation::{GeoOperation, GeoOptions, GeoResponse, Position};
-use leptos::signal_prelude::*;
-use leptos::{
-    Effect, create_effect, leptos_dom::helpers::TimeoutHandle, set_timeout_with_handle, web_sys,
-};
+use leptos::prelude::*;
+use leptos::web_sys::{self, PositionError};
 use leptos_use::{UseGeolocationOptions, UseGeolocationReturn, use_geolocation_with_options};
 use shared::Request;
 
@@ -20,9 +17,9 @@ use super::Backend;
 #[derive(Clone)]
 pub enum Event {
     Watch {
-        backend: Rc<Backend>,
-        /// Wrapped in Rc to facilitate cloning.
-        req: Rc<RefCell<Request<GeoOperation>>>,
+        backend: Arc<Backend>,
+        /// Wrapped in Arc to facilitate cloning.
+        req: Arc<Mutex<Request<GeoOperation>>>,
         opts: GeoOptions,
     },
     Stop,
@@ -42,10 +39,10 @@ enum GeoWatch {
 }
 
 pub fn create_geo_watch() -> WriteSignal<Event> {
-    let (get_event, set_event) = create_signal(Event::Stop);
-    let geo_watch = Rc::new(RefCell::new(GeoWatch::Idle));
-    create_effect(move |_| match get_event.get() {
-        Event::Stop => geo_watch.borrow_mut().stop(),
+    let (get_event, set_event) = signal(Event::Stop);
+    let geo_watch = Arc::new(Mutex::new(GeoWatch::Idle));
+    Effect::new(move |_| match get_event.get() {
+        Event::Stop => geo_watch.lock().unwrap().stop(),
         Event::Watch { backend, req, opts } => {
             GeoWatch::watch(geo_watch.clone(), set_event, backend, req, opts);
         }
@@ -66,18 +63,19 @@ impl GeoWatch {
 
     /// Begin watching the position.
     pub fn watch(
-        self_: Rc<RefCell<Self>>,
+        self_: Arc<Mutex<Self>>,
         set_event: WriteSignal<Event>,
-        backend: Rc<Backend>,
-        request: Rc<RefCell<Request<GeoOperation>>>,
+        backend: Arc<Backend>,
+        request: Arc<Mutex<Request<GeoOperation>>>,
         opts: GeoOptions,
     ) {
-        let n_retries = if let Self::Retry { n, .. } = &*self_.borrow() {
-            *n
+        let mut self_guard = self_.lock().unwrap();
+        let n_retries = if let Self::Retry { n, .. } = *self_guard {
+            n
         } else {
             0
         };
-        self_.borrow_mut().stop();
+        self_guard.stop();
         let UseGeolocationReturn {
             coords: get_coords,
             located_at: get_timestamp,
@@ -85,10 +83,12 @@ impl GeoWatch {
             pause: stop_fn,
             resume: _,
         } = use_geolocation_with_options(convert_geo_options(opts));
-        *self_.borrow_mut() = Self::Alive {
+        *self_guard = Self::Alive {
             stop_fn: Box::new(stop_fn),
         };
-        create_effect(move |_| {
+        drop(self_guard);
+
+        Effect::new(move |_| {
             let coords = get_coords.get();
             let timestamp = get_timestamp.get();
             let error = get_error.get();
@@ -100,7 +100,7 @@ impl GeoWatch {
                     retry_time(n_retries),
                 )
                 .unwrap();
-                *self_.borrow_mut() = Self::Retry {
+                *self_.lock().unwrap() = Self::Retry {
                     n: n_retries + 1,
                     handle,
                 };
@@ -113,7 +113,7 @@ impl GeoWatch {
             };
             let effects = backend
                 .core
-                .resolve(&mut request.borrow_mut(), geo_response)
+                .resolve(&mut *request.lock().unwrap(), geo_response)
                 .unwrap();
             backend.process_effects(effects);
         });
@@ -136,8 +136,7 @@ fn convert_geo_options(opts: GeoOptions) -> UseGeolocationOptions {
 }
 
 /// Convert a `web_sys::PositionError` to a `GeoResponse`.
-fn convert_error(err: web_sys::PositionError) -> GeoResponse {
-    use web_sys::PositionError;
+fn convert_error(err: PositionError) -> GeoResponse {
     match err.code() {
         PositionError::PERMISSION_DENIED => GeoResponse::PermissionDeniedError,
         PositionError::POSITION_UNAVAILABLE => GeoResponse::PositionUnavailableError,

@@ -1,21 +1,16 @@
-#![allow(unused_imports)]
 mod core;
 
 use core::App;
-use std::fmt;
-use std::hash::{DefaultHasher, Hash};
-use std::rc::Rc;
 
 use base64::prelude::*;
 use build_time::build_time_local;
-use compact_str::CompactString;
-use leptos::{
-    component, create_effect, create_node_ref, ev, event_target, html, logging::warn,
-    signal_prelude::*, web_sys, IntoView,
-};
+use leptos::html;
+use leptos::prelude::*;
+use leptos::tachys::html::event as ev;
+use leptos::web_sys;
 use shared::{
-    view_types::{ViewModel, ViewObject},
     Event,
+    view_types::{ViewModel, ViewObject},
 };
 
 #[component]
@@ -57,10 +52,10 @@ fn list_items<T: ViewObject>(
     app: App,
     summary: &'static str,
     view_n_event: impl Fn(usize) -> Event + 'static,
-    items: impl Fn(&ViewModel) -> &[T] + Copy + 'static,
+    items: impl Fn(&ViewModel) -> &[T] + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     // Number of things.
-    let no_items = create_memo(move |_| items(&app.view.get()).len());
+    let no_items = Memo::new(move |_| items(&app.view.get()).len());
     let body = html::details()
         .on(ev::toggle, move |ev| {
             let is_open = event_target::<web_sys::HtmlDetailsElement>(&ev).open();
@@ -96,8 +91,8 @@ fn list_items<T: ViewObject>(
 }
 
 fn save_pos_component(app: App) -> impl IntoView {
-    let (save_pos_dialog, set_save_pos_dialog) = create_signal(false);
-    let input_node = create_node_ref();
+    let (save_pos_dialog, set_save_pos_dialog) = signal(false);
+    let input_node = NodeRef::new();
     move || {
         if save_pos_dialog.get() {
             html::form()
@@ -134,8 +129,8 @@ fn save_pos_component(app: App) -> impl IntoView {
 }
 
 fn save_way_component(app: App) -> impl IntoView {
-    let (save_way_dialog, set_save_way_dialog) = create_signal(false);
-    let input_node = create_node_ref();
+    let (save_way_dialog, set_save_way_dialog) = signal(false);
+    let input_node = NodeRef::new();
     move || {
         if save_way_dialog.get() {
             html::form()
@@ -221,5 +216,5 @@ fn footer_component() -> impl IntoView {
 
 fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    leptos::mount_to_body(|| RootComponent());
+    mount_to_body(|| RootComponent());
 }

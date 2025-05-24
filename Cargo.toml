@@ -1,5 +1,5 @@
 [workspace]
-resolver = "1"
+resolver = "3"
 members = [ "crux_geolocation", "shared", "web-leptos"]
 # TODO: Add shared_types as a member when typegen works with rust_kv.
 

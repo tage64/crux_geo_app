@@ -1,22 +1,21 @@
 #![allow(unused_variables, dead_code)]
 mod geolocation;
 mod storage;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
-use crux_geolocation::{GeoOperation, GeoOptions};
+use crux_geolocation::GeoOperation;
 use crux_kv::{KeyValueOperation, KeyValueResponse, KeyValueResult, value::Value};
 use crux_time::{TimeRequest, TimeResponse};
-use leptos::signal_prelude::*;
-use leptos::watch;
+use leptos::prelude::Effect as LeptosEffect;
+use leptos::prelude::*;
 use shared::{Effect, Event, FileDownloadOperation, GeoApp, Request, view_types::ViewModel};
 
 /// Signals to send events to and get the last view model from the app.
 #[derive(Clone, Copy)]
 pub struct App {
     /// Signal to receive the latest view model.
-    pub view: ReadSignal<Rc<ViewModel>>,
+    pub view: ReadSignal<Arc<ViewModel>>,
     /// Signal to send events to the app.
     pub set_event: WriteSignal<Event>,
     /// Signal to receive a `FileDownloadRequest`.
@@ -28,7 +27,7 @@ struct Backend {
     /// The core of the app.
     core: shared::Core<GeoApp>,
     /// Signal where new view models are sent from the core.
-    render: WriteSignal<Rc<ViewModel>>,
+    render: WriteSignal<Arc<ViewModel>>,
     /// Signal to receive events that should be sent to the core.
     event: ReadSignal<Event>,
     /// Signal to set a file download request.
@@ -40,17 +39,17 @@ struct Backend {
 impl App {
     pub fn new() -> Self {
         let core = shared::Core::new();
-        let (view, render) = create_signal(Rc::new(core.view()));
-        let (event, set_event) = create_signal(Event::StartGeolocation);
-        let file_download = create_rw_signal(None);
-        let backend = Rc::new(Backend {
+        let (view, render) = signal(Arc::new(core.view()));
+        let (event, set_event) = signal(Event::StartGeolocation);
+        let file_download = RwSignal::new(None);
+        let backend = Arc::new(Backend {
             core,
             render,
             event,
             set_file_download: file_download.write_only(),
             geo_watch: geolocation::create_geo_watch(),
         });
-        let _ = watch(
+        let _ = LeptosEffect::watch(
             move || event.get(),
             move |event, _, _| {
                 let effects = backend.core.process_event(event.clone());
@@ -69,11 +68,11 @@ impl App {
 
 impl Backend {
     /// Process a bunch of effects from the core.
-    pub fn process_effects(self: &Rc<Self>, effects: impl IntoIterator<Item = Effect>) {
+    pub fn process_effects(self: &Arc<Self>, effects: impl IntoIterator<Item = Effect>) {
         for effect in effects {
             match effect {
                 Effect::Render(_) => {
-                    self.render.set(Rc::new(self.core.view()));
+                    self.render.set(Arc::new(self.core.view()));
                 }
                 Effect::Time(req) => self.clone().process_time(req),
                 Effect::Storage(req) => self.process_storage(req),
@@ -84,7 +83,7 @@ impl Backend {
     }
 
     /// Process a time request from the core.
-    fn process_time(self: Rc<Self>, mut request: Request<TimeRequest>) {
+    fn process_time(self: Arc<Self>, mut request: Request<TimeRequest>) {
         match request.operation {
             TimeRequest::Now => {
                 let response = TimeResponse::Now {
@@ -92,7 +91,7 @@ impl Backend {
                 };
                 self.process_effects(self.core.resolve(&mut request, response).unwrap());
             }
-            TimeRequest::NotifyAfter { duration, id } => leptos::set_timeout(
+            TimeRequest::NotifyAfter { duration, id } => set_timeout(
                 move || {
                     self.process_effects(
                         self.core
@@ -105,7 +104,7 @@ impl Backend {
                     .to_std()
                     .unwrap(),
             ),
-            TimeRequest::NotifyAt { instant, id } => leptos::set_timeout(
+            TimeRequest::NotifyAt { instant, id } => set_timeout(
                 move || {
                     self.process_effects(
                         self.core
@@ -122,7 +121,7 @@ impl Backend {
     }
 
     /// Handle persistant storage operations.
-    fn process_storage(self: &Rc<Self>, mut request: Request<KeyValueOperation>) {
+    fn process_storage(self: &Arc<Self>, mut request: Request<KeyValueOperation>) {
         match request.operation.clone() {
             KeyValueOperation::Get { key } => {
                 let val = storage::get(key);
@@ -162,11 +161,11 @@ impl Backend {
     }
 
     /// Process a geolocation request from the core.
-    fn process_geolocation(self: &Rc<Self>, req: Request<GeoOperation>) {
+    fn process_geolocation(self: &Arc<Self>, req: Request<GeoOperation>) {
         match req.operation {
             GeoOperation::WatchPosition(opts) => self.geo_watch.set(geolocation::Event::Watch {
                 backend: self.clone(),
-                req: Rc::new(RefCell::new(req)),
+                req: Arc::new(Mutex::new(req)),
                 opts,
             }),
             GeoOperation::ClearWatch => self.geo_watch.set(geolocation::Event::Stop),
