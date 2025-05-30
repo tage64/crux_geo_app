@@ -647,6 +647,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "669a445ee724c5c69b1b06fe0b63e70a1c84bc9bb7d9696cd4f4e3ec45050408"
 
 [[package]]
+name = "ecow"
+version = "0.2.5"
+source = "git+https://github.com/tage64/ecow#076351cfea502b354e8c9d5e25a77e2ca3ebe01f"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2192,11 +2200,11 @@ dependencies = [
  "arrayvec",
  "bincode",
  "chrono",
- "compact_str",
  "crux_core",
  "crux_geolocation",
  "crux_kv",
  "crux_time",
+ "ecow",
  "itertools",
  "jord",
  "lazy_reaction",

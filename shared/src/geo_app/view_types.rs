@@ -5,8 +5,8 @@
 
 use arrayvec::ArrayVec;
 use chrono::{TimeDelta, prelude::*};
-use compact_str::{CompactString, ToCompactString, format_compact};
 use crux_geolocation::GeoInfo;
+use ecow::{EcoString, EcoVec, eco_format};
 use itertools::Either;
 use jord::{LatLong, spherical::Sphere};
 use lazy_reaction::{DerivedSignal, Source};
@@ -24,39 +24,39 @@ const COORD_PRECITION: usize = 5;
 const PRECITION: usize = 1;
 
 /// Format latitude, longitude, altitude and accuracy.
-fn format_pos(pos: &(impl Coords + Altitude)) -> ArrayVec<CompactString, 5> {
+fn format_pos(pos: &(impl Coords + Altitude)) -> ArrayVec<EcoString, 5> {
     let latitude = pos.coords().latitude().as_degrees();
     let longitude = pos.coords().longitude().as_degrees();
     let north_south = if latitude >= 0.0 { "North" } else { "South" };
     let east_west = if longitude >= 0.0 { "East" } else { "West" };
     let mut properties = ArrayVec::new();
-    properties.push(format_compact!(
+    properties.push(eco_format!(
         "Latitude: {:.*}° {}",
         COORD_PRECITION,
         latitude,
         north_south
     ));
-    properties.push(format_compact!(
+    properties.push(eco_format!(
         "Longitude: {:.*}° {}",
         COORD_PRECITION,
         longitude,
         east_west,
     ));
     if let Some(altitude) = pos.altitude() {
-        properties.push(format_compact!(
+        properties.push(eco_format!(
             "Altitude: {:.*} meters",
             PRECITION,
             altitude.as_metres()
         ));
     }
     if let Some(accuracy) = pos.accuracy() {
-        properties.push(format_compact!(
+        properties.push(eco_format!(
             "Accuracy: {} meters",
             accuracy.as_metres().round()
         ));
     }
     if let Some(altitude_accuracy) = pos.altitude_accuracy() {
-        properties.push(format_compact!(
+        properties.push(eco_format!(
             "Altitude accuracy: {} meters",
             altitude_accuracy.as_metres().round()
         ));
@@ -65,11 +65,11 @@ fn format_pos(pos: &(impl Coords + Altitude)) -> ArrayVec<CompactString, 5> {
 }
 
 /// Format a timestamp.
-fn format_timestamp(timestamp: DateTime<Utc>) -> CompactString {
-    timestamp
-        .with_timezone(&Local)
-        .format("%a %b %e %T %Y")
-        .to_compact_string()
+fn format_timestamp(timestamp: DateTime<Utc>) -> EcoString {
+    eco_format!(
+        "{}",
+        timestamp.with_timezone(&Local).format("%a %b %e %T %Y")
+    )
 }
 
 /// Select the saved positions to view.
@@ -77,7 +77,7 @@ fn view_saved_positions_fn(
     saved_positions: Arc<RTree<SavedPos>>,
     n: usize,
     curr_pos: Option<LatLong>,
-) -> Vec<ViewSavedPos> {
+) -> EcoVec<ViewSavedPos> {
     if let Some(curr_pos) = curr_pos {
         Either::Left(saved_positions.nearest_neighbor_iter(&rtree_point(&curr_pos)))
     } else {
@@ -91,12 +91,12 @@ fn view_saved_positions_fn(
 /// A trait for things which consists of a short summary, some properties, and maybe even some more
 /// properties.
 pub trait ViewObject {
-    fn summary(&self) -> &CompactString;
-    fn properties(&self) -> &[CompactString];
+    fn summary(&self) -> &EcoString;
+    fn properties(&self) -> &[EcoString];
     /// An event to delete the object.
     fn delete(&self) -> Option<Event>;
     /// Even more properties which are usually not very interesting. May be empty.
-    fn more_properties(&self) -> &[CompactString] {
+    fn more_properties(&self) -> &[EcoString] {
         &[]
     }
 }
@@ -105,11 +105,11 @@ pub trait ViewObject {
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewSavedPos {
     /// The name of the saved position.
-    pub name: CompactString,
+    pub name: EcoString,
     /// The name and (if it does exist) a distance and direction.
-    pub summary: CompactString,
+    pub summary: EcoString,
     /// A number of properties, like latitude and timestamp.
-    pub properties: ArrayVec<CompactString, 6>,
+    pub properties: ArrayVec<EcoString, 6>,
     /// Whether it can be deleted.
     pub deleateable: bool,
 }
@@ -117,7 +117,7 @@ pub struct ViewSavedPos {
 impl ViewSavedPos {
     fn new(saved_pos: &SavedPos, curr_pos: Option<LatLong>, deleateable: bool) -> Self {
         let summary = if let Some(curr_coords) = curr_pos {
-            format_compact!(
+            eco_format!(
                 "{}: {} m, {}°",
                 saved_pos.name,
                 PLANET
@@ -137,7 +137,7 @@ impl ViewSavedPos {
 
         let mut properties = ArrayVec::new();
         properties.extend(format_pos(saved_pos));
-        properties.push(format_compact!(
+        properties.push(eco_format!(
             "Saved at: {}",
             format_timestamp(saved_pos.timestamp)
         ));
@@ -151,10 +151,10 @@ impl ViewSavedPos {
 }
 
 impl ViewObject for ViewSavedPos {
-    fn summary(&self) -> &CompactString {
+    fn summary(&self) -> &EcoString {
         &self.summary
     }
-    fn properties(&self) -> &[CompactString] {
+    fn properties(&self) -> &[EcoString] {
         &self.properties
     }
     fn delete(&self) -> Option<Event> {
@@ -167,17 +167,17 @@ impl ViewObject for ViewSavedPos {
 }
 
 /// Information about speed and bearing.
-fn format_speed_and_heading(geo: &GeoInfo) -> ArrayVec<CompactString, 2> {
+fn format_speed_and_heading(geo: &GeoInfo) -> ArrayVec<EcoString, 2> {
     let mut properties = ArrayVec::new();
     if let Some(speed) = geo.volocity {
-        properties.push(format_compact!(
+        properties.push(eco_format!(
             "Speed: {:.*} m/s",
             PRECITION,
             speed.as_metres_per_second()
         ));
     }
     if let Some(heading) = geo.bearing {
-        properties.push(format_compact!("Heading {}°", heading.as_degrees().round()));
+        properties.push(eco_format!("Heading {}°", heading.as_degrees().round()));
     }
     properties
 }
@@ -186,36 +186,36 @@ fn format_speed_and_heading(geo: &GeoInfo) -> ArrayVec<CompactString, 2> {
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ViewRecordedWay {
     /// The name of the recorded way.
-    pub name: CompactString,
+    pub name: EcoString,
     /// The elapsed time, distance and average speed.
-    pub summary: CompactString,
+    pub summary: EcoString,
     /// A number of properties, like number of nodes.
-    pub properties: ArrayVec<CompactString, 3>,
+    pub properties: ArrayVec<EcoString, 3>,
     pub deleateable: bool,
 }
 
 impl ViewRecordedWay {
     pub(crate) fn new(name: impl fmt::Display, rec: &RecordedWay, deleateable: bool) -> Self {
-        let summary = format_compact!("{}: {} meters", name, rec.way.length().as_metres().round());
+        let summary = eco_format!("{}: {} meters", name, rec.way.length().as_metres().round());
         let properties = if rec.way.nodes().len() > 0 {
             ArrayVec::from([
-                format_compact!("Number of nodes: {}", rec.way.nodes().len()),
-                format_compact!(
+                eco_format!("Number of nodes: {}", rec.way.nodes().len()),
+                eco_format!(
                     "Start time: {}",
                     format_timestamp(rec.way().nodes().first().unwrap().timestamp())
                 ),
-                format_compact!(
+                eco_format!(
                     "End time: {}",
                     format_timestamp(rec.way().nodes().last().unwrap().timestamp())
                 ),
             ])
         } else {
             let mut p = ArrayVec::new();
-            p.push("The way doesn't have any nodes.".to_compact_string());
+            p.push("The way doesn't have any nodes.".into());
             p
         };
         Self {
-            name: name.to_compact_string(),
+            name: EcoString::from_display(name),
             summary,
             properties,
             deleateable,
@@ -224,10 +224,10 @@ impl ViewRecordedWay {
 }
 
 impl ViewObject for ViewRecordedWay {
-    fn summary(&self) -> &CompactString {
+    fn summary(&self) -> &EcoString {
         &self.summary
     }
-    fn properties(&self) -> &[CompactString] {
+    fn properties(&self) -> &[EcoString] {
         &self.properties
     }
     fn delete(&self) -> Option<Event> {
@@ -244,21 +244,21 @@ impl ViewObject for ViewRecordedWay {
 pub struct ViewModel {
     /// Information about the GPS status. May display an error, especially if current_pos is
     /// `None`. Otherwise it should display accuracy and such.
-    pub gps_status: CompactString,
+    pub gps_status: EcoString,
 
     /// Properties like latitude and volocity about the current position. May be empty.
-    pub curr_pos_properties: Arc<ArrayVec<CompactString, 7>>,
+    pub curr_pos_properties: Arc<ArrayVec<EcoString, 7>>,
     /// The list of saved positions that the user wants to show. Might be empty.
-    pub saved_positions: Arc<Vec<ViewSavedPos>>,
+    pub saved_positions: EcoVec<ViewSavedPos>,
     /// The recorded way containing all positions since the app started.
     ///
     /// Updated very frequently -- at every position update.
     pub way_since_app_start: Arc<Option<ViewRecordedWay>>,
     /// List of saved recorded ways to show. Might be empty if the user doesn't want to show
     /// anything.
-    pub recorded_ways: Arc<Vec<ViewRecordedWay>>,
+    pub recorded_ways: EcoVec<ViewRecordedWay>,
     /// A message that should be displayed to the user.
-    pub msg: Option<CompactString>,
+    pub msg: Option<EcoString>,
 }
 
 impl ViewModel {
@@ -283,27 +283,22 @@ impl ViewModel {
             (model.curr_pos.subscribe(), positions_in_last_minute),
             |(curr_pos, positions_in_last_minute)| match curr_pos {
                 None => "No GPS information".into(),
-                Some(Err(e)) => format_compact!("GPS Error: {}", e),
+                Some(Err(e)) => eco_format!("GPS Error: {}", e),
                 Some(Ok(GeoInfo {
                     accuracy,
                     altitude_accuracy,
                     ..
                 })) => {
-                    let mut text = CompactString::new("");
+                    let mut text = EcoString::new();
                     if let Some(a) = accuracy {
-                        text += &format_compact!("Accuracy: {:.*} m, ", PRECITION, a.as_metres());
+                        text += eco_format!("Accuracy: {:.*} m, ", PRECITION, a.as_metres());
                     }
                     if let Some(aa) = altitude_accuracy {
-                        text += &format_compact!(
-                            "Altitude accuracy: {:.*} m, ",
-                            PRECITION,
-                            aa.as_metres()
-                        );
+                        text +=
+                            eco_format!("Altitude accuracy: {:.*} m, ", PRECITION, aa.as_metres());
                     }
-                    text += &format_compact!(
-                        "{} positions in the last minute.",
-                        positions_in_last_minute
-                    );
+                    text +=
+                        eco_format!("{} positions in the last minute.", positions_in_last_minute);
                     text
                 }
             },
@@ -319,9 +314,7 @@ impl ViewModel {
                     .subscribe()
                     .map(|x| x.and_then(|x| x.ok().map(|x| x.coords))),
             ),
-            |(saved_positions, n, curr_pos)| {
-                Arc::new(view_saved_positions_fn(saved_positions, n, curr_pos))
-            },
+            |(saved_positions, n, curr_pos)| view_saved_positions_fn(saved_positions, n, curr_pos),
         );
 
         // Write some properties about the current position.
@@ -358,13 +351,11 @@ impl ViewModel {
                 model.view_n_recorded_ways.subscribe(),
             ),
             |(saved_recorded_ways, n)| {
-                Arc::new(
-                    saved_recorded_ways
-                        .iter()
-                        .map(move |(name, way)| ViewRecordedWay::new(name, way, true))
-                        .take(n.saturating_sub(1))
-                        .collect::<Vec<_>>(),
-                )
+                saved_recorded_ways
+                    .iter()
+                    .map(move |(name, way)| ViewRecordedWay::new(name, way, true))
+                    .take(n.saturating_sub(1))
+                    .collect::<EcoVec<_>>()
             },
         );
 

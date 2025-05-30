@@ -1,18 +1,18 @@
 use std::ops::Div;
 
 use chrono::{DateTime, Utc};
-use compact_str::CompactString;
 use crux_geolocation::GeoInfo;
+use ecow::EcoString;
 use jord::{
-    spherical::{GreatCircle, MinorArc},
     LatLong, Length, NVector, Vec3,
+    spherical::{GreatCircle, MinorArc},
 };
-use rstar::{PointDistance, RTreeObject, AABB};
+use rstar::{AABB, PointDistance, RTreeObject};
 use serde::{Deserialize, Serialize};
 
 use super::geo_traits::*;
-use crate::numbers::eq_zero;
 use crate::PLANET;
+use crate::numbers::eq_zero;
 
 /// A position.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -95,13 +95,13 @@ impl RecordedPos for PosWithTimestamp {
 /// A saved position.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedPos {
-    pub name: CompactString,
+    pub name: EcoString,
     pub pos: Position,
     pub timestamp: DateTime<Utc>,
 }
 
 impl SavedPos {
-    pub fn new(name: CompactString, geo: &GeoInfo) -> Self {
+    pub fn new(name: EcoString, geo: &GeoInfo) -> Self {
         Self {
             name,
             pos: geo.into(),
@@ -351,7 +351,7 @@ impl RecordedWay {
 #[cfg(test)]
 mod tests {
     use itertools::iproduct;
-    use jord::{spherical::Sphere, Angle};
+    use jord::{Angle, spherical::Sphere};
 
     use super::*;
     use crate::numbers::{gte, lte};

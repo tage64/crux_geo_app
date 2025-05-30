@@ -7,7 +7,6 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use chrono::prelude::*;
-use compact_str::{CompactString, ToCompactString, format_compact};
 use crux_core::{
     App,
     macros::effect,
@@ -19,6 +18,7 @@ use crux_time::{
     TimeRequest,
     command::{Time, TimerOutcome},
 };
+use ecow::{EcoString, eco_format};
 use geo_types::{RecordedWay, SavedPos, rtree_point};
 use jord::spherical::Sphere;
 use lazy_reaction::{DerivedSignal, ReactiveGraph, ReadSignal, Source, WriteSignal};
@@ -69,24 +69,24 @@ pub enum Event {
     #[serde(skip)]
     SetData {
         res: Result<Option<Vec<u8>>, KeyValueError>,
-        key: CompactString,
+        key: EcoString,
     },
     /// Download the data
     DownloadData,
 
     // Saved Positions
     /// Save the current position with a name.
-    SaveCurrPos(CompactString),
+    SaveCurrPos(EcoString),
     /// Delete a saved position by its name.
-    DelSavedPos(CompactString),
+    DelSavedPos(EcoString),
     /// View the n nearest saved positions. To hide all, set this to 0.
     ViewNSavedPositions(usize),
 
     // Recorded Ways
     /// Save the way since the app started.
-    SaveAllPositions(CompactString),
+    SaveAllPositions(EcoString),
     /// Delete a recorded way.
-    DelRecordedWay(CompactString),
+    DelRecordedWay(EcoString),
     /// View n recorded ways.
     ViewNRecordedWays(usize),
 
@@ -100,7 +100,7 @@ pub enum Event {
     // Miscellaneous
     /// A message which should be displayed to the user.
     #[serde(skip)]
-    Msg(CompactString),
+    Msg(EcoString),
     #[serde(skip)]
     None,
 }
@@ -131,7 +131,7 @@ struct InnerModel {
 
     /// Saved positions by their names. This should probably be maid better in some way, but
     /// `RTree` doesn't support any other indexing than positions at the moment.
-    saved_positions_names: HashMap<CompactString, SavedPos>,
+    saved_positions_names: HashMap<EcoString, SavedPos>,
     /// The number of saved positions the UI at most want to show.
     view_n_saved_positions: WriteSignal<usize>,
 
@@ -139,12 +139,12 @@ struct InnerModel {
     /// All positions since the app was started.
     all_positions: WriteSignal<Arc<Option<RecordedWay>>>,
     /// Saved ways and their names.
-    recorded_ways: WriteSignal<Arc<HashMap<CompactString, RecordedWay>>>,
+    recorded_ways: WriteSignal<Arc<HashMap<EcoString, RecordedWay>>>,
     /// The number of recorded ways the UI at most want to show.
     view_n_recorded_ways: WriteSignal<usize>,
 
     /// A message that should be viewed to the user.
-    msg: WriteSignal<CompactString>,
+    msg: WriteSignal<EcoString>,
 
     /// The current time minus at most `UPDATE_CURR_TIME_AFTER`. Only availlable after the first
     /// call to `Event::StartGeolocation`.
@@ -155,7 +155,7 @@ pub struct Model {
     inner: InnerModel,
     view: Mutex<DerivedSignal<Arc<ViewModel>>>,
     saved_positions_subscriber: ReadSignal<Arc<RTree<SavedPos>>>,
-    recorded_ways_subscriber: ReadSignal<Arc<HashMap<CompactString, RecordedWay>>>,
+    recorded_ways_subscriber: ReadSignal<Arc<HashMap<EcoString, RecordedWay>>>,
 }
 
 impl Default for Model {
@@ -261,7 +261,7 @@ fn update(model: &mut InnerModel, event: Event) -> Command {
         Event::SaveCurrPos(name) => {
             if model.saved_positions_names.contains_key(&name) {
                 // Error: A position with this name already exists.
-                model.msg.set(format_compact!(
+                model.msg.set(eco_format!(
                     "Error: There is already a position named {name}"
                 ));
             } else {
@@ -291,11 +291,11 @@ fn update(model: &mut InnerModel, event: Event) -> Command {
                     .saved_positions
                     .update(|positions| Arc::make_mut(positions).remove(&pos));
 
-                model.msg.set(format_compact!("{name} has been removed."));
+                model.msg.set(eco_format!("{name} has been removed."));
             } else {
                 model
                     .msg
-                    .set(format_compact!("Error: Position {name} does not exist."));
+                    .set(eco_format!("Error: Position {name} does not exist."));
             }
             Command::done()
         }
@@ -311,7 +311,7 @@ fn update(model: &mut InnerModel, event: Event) -> Command {
                     if recorded_ways.contains_key(&name) {
                         model
                             .msg
-                            .set(format_compact!("Error: The name {name} is already in use."));
+                            .set(eco_format!("Error: The name {name} is already in use."));
                         (false, ())
                     } else {
                         Arc::make_mut(recorded_ways).insert(name, all_positions.clone());
@@ -325,9 +325,7 @@ fn update(model: &mut InnerModel, event: Event) -> Command {
                     }
                 })
             } else {
-                model
-                    .msg
-                    .set(format_compact!("Error: No positions recorded."));
+                model.msg.set(eco_format!("Error: No positions recorded."));
             }
             Command::done()
         }
@@ -335,7 +333,7 @@ fn update(model: &mut InnerModel, event: Event) -> Command {
             model.recorded_ways.update_with(|recorded_ways| {
                 let recorded_ways = Arc::make_mut(recorded_ways);
                 if recorded_ways.remove(&name).is_some() {
-                    model.msg.set(format_compact!("{name} has been removed."));
+                    model.msg.set(eco_format!("{name} has been removed."));
 
                     // The call to `save_recorded_ways()` will cause a deadlock as it will try
                     // to read recorded_ways while it is written to in this function.
@@ -346,7 +344,7 @@ fn update(model: &mut InnerModel, event: Event) -> Command {
                 } else {
                     model
                         .msg
-                        .set(format_compact!("Error: Way {name} does not exist."));
+                        .set(eco_format!("Error: Way {name} does not exist."));
                     (false, ())
                 }
             });
@@ -384,7 +382,7 @@ fn update(model: &mut InnerModel, event: Event) -> Command {
 fn load_persistant_data(key: &'static str) -> Command {
     KeyValue::get(key).then_send(move |res| Event::SetData {
         res,
-        key: key.to_compact_string(),
+        key: key.into(),
     })
 }
 
@@ -392,28 +390,25 @@ fn load_persistant_data(key: &'static str) -> Command {
 fn set_data(
     model: &mut InnerModel,
     res: Result<Option<Vec<u8>>, KeyValueError>,
-    key: CompactString,
-) -> Result<(), CompactString> {
+    key: EcoString,
+) -> Result<(), EcoString> {
     match (res, key) {
         (Ok(Some(bytes)), key) if key == SAVED_POSITIONS_KEY => {
             let (rtree, names) = bincode::deserialize(bytes.as_slice()).map_err(|e| {
-                format_compact!("Browser Error: Error while decoding saved_positions: {e}")
+                eco_format!("Browser Error: Error while decoding saved_positions: {e}")
             })?;
             model.saved_positions.set(Arc::new(rtree));
             model.saved_positions_names = names;
         }
         (Ok(Some(bytes)), key) if key == RECORDED_WAYS_KEY => {
-            let recorded_ways = bincode::deserialize(bytes.as_slice()).map_err(|e| {
-                format_compact!("Browser Error: Error while decoding saved ways: {e}")
-            })?;
+            let recorded_ways = bincode::deserialize(bytes.as_slice())
+                .map_err(|e| eco_format!("Browser Error: Error while decoding saved ways: {e}"))?;
             model.recorded_ways.set(Arc::new(recorded_ways));
         }
         (Ok(Some(_)), key) => panic!("Bad key: {key}"),
         (Ok(None), _) => (),
         (Err(e), key) => {
-            return Err(format_compact!(
-                "Internal Error: When retrieving {key}: {e}"
-            ));
+            return Err(eco_format!("Internal Error: When retrieving {key}: {e}"));
         }
     }
     Ok(())
@@ -426,7 +421,7 @@ fn save_saved_positions(saved_positions: &RTree<SavedPos>, model: &InnerModel) -
     )
     .then_send(|res| {
         if let Err(e) = res {
-            Event::Msg(format_compact!(
+            Event::Msg(eco_format!(
                 "Internal Error: Failed to serialize saved_positions: {e}"
             ))
         } else {
@@ -435,14 +430,14 @@ fn save_saved_positions(saved_positions: &RTree<SavedPos>, model: &InnerModel) -
     })
 }
 
-fn save_recorded_ways(recorded_ways: &HashMap<CompactString, RecordedWay>) -> Command {
+fn save_recorded_ways(recorded_ways: &HashMap<EcoString, RecordedWay>) -> Command {
     KeyValue::set(
         RECORDED_WAYS_KEY.to_string(),
         bincode::serialize(recorded_ways).unwrap(),
     )
     .then_send(|res| {
         if let Err(e) = res {
-            Event::Msg(format_compact!(
+            Event::Msg(eco_format!(
                 "Internal Error: Failed to serialize recorded_ways: {e}"
             ))
         } else {
