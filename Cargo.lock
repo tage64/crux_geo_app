@@ -50,6 +50,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
+name = "archery"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eae2ed21cd55021f05707a807a5fc85695dafb98832921f6cfa06db67ca5b869"
+
+[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -187,6 +193,12 @@ name = "bitflags"
 version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
+
+[[package]]
+name = "bitmaps"
+version = "3.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1d084b0137aaa901caf9f1e8b21daa6aa24d41cd806e111335541eff9683bd6"
 
 [[package]]
 name = "build-time"
@@ -1149,6 +1161,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "imbl"
+version = "5.0.0"
+source = "git+https://github.com/tage64/imbl#f86d4f5415b1e514e1654694678d3dc98c5098cf"
+dependencies = [
+ "archery",
+ "bitmaps",
+ "imbl-sized-chunks",
+ "rand_core 0.9.3",
+ "rand_xoshiro",
+ "version_check",
+]
+
+[[package]]
+name = "imbl-sized-chunks"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f4241005618a62f8d57b2febd02510fb96e0137304728543dfc5fd6f052c22d"
+dependencies = [
+ "bitmaps",
+]
+
+[[package]]
 name = "include_dir"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1810,7 +1844,7 @@ checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
  "libc",
  "rand_chacha",
- "rand_core",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -1820,7 +1854,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -1830,6 +1864,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.16",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
+
+[[package]]
+name = "rand_xoshiro"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f703f4665700daf5512dcca5f43afa6af89f09db47fb56be587f80636bda2d41"
+dependencies = [
+ "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -2205,6 +2254,7 @@ dependencies = [
  "crux_kv",
  "crux_time",
  "ecow",
+ "imbl",
  "itertools",
  "jord",
  "lazy_reaction",

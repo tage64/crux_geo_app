@@ -22,6 +22,7 @@ crux_geolocation = { version = "0.1.0", path = "../crux_geolocation" }
 crux_kv.workspace = true
 crux_time.workspace = true
 ecow = { git = "https://github.com/tage64/ecow", version = "0.2.5", features = ["serde"] }
+imbl = { git = "https://github.com/tage64/imbl", version = "5.0.0" }
 itertools = "0.14.0"
 jord.workspace = true
 lazy_reaction = { git = "https://github.com/tage64/lazy_reaction", version = "0.1.0" }

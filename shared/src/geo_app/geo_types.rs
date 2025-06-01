@@ -1,10 +1,11 @@
 use std::ops::Div;
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
 use crux_geolocation::GeoInfo;
 use ecow::EcoString;
 use jord::{
-    LatLong, Length, NVector, Vec3,
+    LatLong, Length, Measurement, NVector, Vec3,
     spherical::{GreatCircle, MinorArc},
 };
 use rstar::{AABB, PointDistance, RTreeObject};
@@ -245,6 +246,15 @@ pub struct Way<T> {
     nodes: Vec<T>,
     /// The length of the way.
     length: Length,
+    /// An **ordered** list of all accuracies for all positions. Used to compute statistical
+    /// metrics like median or other percentiles. (Lazily initialised.)
+    ///
+    /// This is basically a order statistic tree (see Wikipedia). When inserting elements, you may
+    /// only use the [`imbl::Vector::insert_ord_by()`] method to preserve ordering.
+    ///
+    /// The order is determined by [`f64::total_cmp()`] on [`Length::as_default_unit()`].
+    #[serde(skip)]
+    accuracies: OnceLock<imbl::Vector<Length>>,
 }
 
 impl<T> Way<T> {
@@ -252,6 +262,7 @@ impl<T> Way<T> {
         Self {
             nodes: vec![],
             length: Length::ZERO,
+            accuracies: OnceLock::new(),
         }
     }
 
@@ -267,20 +278,58 @@ impl<T> Way<T> {
 impl<T: Coords> Way<T> {
     /// Add a node to the end of the way.
     pub fn append(&mut self, pos: T) {
+        // Adjust the length.
         if let Some(last) = self.nodes.last() {
             self.length = self.length + PLANET.distance(last.nvector(), pos.nvector());
         }
+
+        // Adjust `self.accuracies` if it is initialised and `pos.accuracy()` returns `Some`.
+        if let (Some(accuracies), Some(accuracy)) = (self.accuracies.get_mut(), pos.accuracy()) {
+            accuracies.insert_ord_by(accuracy, |x, y| {
+                x.as_default_unit().total_cmp(&y.as_default_unit())
+            });
+        }
+
         self.nodes.push(pos);
     }
 
     /// Insert a node at the specified index.
     pub fn insert(&mut self, i: usize, pos: T) {
+        // Adjust `self.accuracies` if it is initialised and `pos.accuracy()` returns `Some`.
+        if let (Some(accuracies), Some(accuracy)) = (self.accuracies.get_mut(), pos.accuracy()) {
+            accuracies.insert_ord_by(accuracy, |x, y| {
+                x.as_default_unit().total_cmp(&y.as_default_unit())
+            });
+        }
+
         self.nodes.insert(i, pos);
         self.recompute_length()
     }
 
     /// Change a node at a certain index.
     pub fn update(&mut self, i: usize, new_pos: T) {
+        // Change the accuracy for the point if needed.
+        if let Some(accuracies) = self.accuracies.get_mut() {
+            // Remove the accuracy for the position that is gonna be removed.
+            if let Some(old_accuracy) = self.nodes[i].accuracy() {
+                let Ok(idx_of_old_accuracy) = accuracies.binary_search_by(|other| {
+                    old_accuracy
+                        .as_default_unit()
+                        .total_cmp(&other.as_default_unit())
+                }) else {
+                    panic!("The accuracy for an existing node must appear in self.accuracies.");
+                };
+                accuracies.remove(idx_of_old_accuracy);
+            }
+
+            // Insert the accuracy for the new pos.
+            if let Some(new_accuracy) = new_pos.accuracy() {
+                accuracies.insert_ord_by(new_accuracy, |x, y| {
+                    x.as_default_unit().total_cmp(&y.as_default_unit())
+                });
+            }
+        }
+
         self.nodes[i] = new_pos;
         self.recompute_length();
     }
@@ -291,6 +340,42 @@ impl<T: Coords> Way<T> {
         for i in 1..self.nodes.len() {
             self.length =
                 self.length + PLANET.distance(self.nodes[i - 1].nvector(), self.nodes[i].nvector());
+        }
+    }
+
+    /// Compute the value for [`Self::accuracies`]. This function is meant to be passed to
+    /// `self.accuracies.get_or_init()` or `self.accuracies.get_mut_or_init()`.
+    fn compute_accuracies(&self) -> imbl::Vector<Length> {
+        let mut accuracies = self
+            .nodes()
+            .iter()
+            .filter_map(|p| p.accuracy())
+            .collect::<imbl::Vector<Length>>();
+        accuracies.sort_by(|x, y| x.as_default_unit().total_cmp(&y.as_default_unit()));
+        accuracies
+    }
+
+    /// Get a sorted o list of all accuracies for nodes in this [`Way`].
+    ///
+    /// Note that it probably contain duplicates and it may be shorter than [`Self::nodes()`] if
+    /// some or all of the nodes doesn't provide an accuracy.
+    pub fn accuracies(&self) -> &imbl::Vector<Length> {
+        self.accuracies.get_or_init(|| self.compute_accuracies())
+    }
+
+    /// Get the median accuracy.
+    pub fn median_accuracy(&self) -> Option<Length> {
+        let accuracies = self.accuracies();
+        if accuracies.len() > 0 {
+            if accuracies.len() % 2 == 1 {
+                Some(accuracies[accuracies.len() / 2])
+            } else {
+                let idx = accuracies.len() / 2;
+                let mut accuracies = accuracies.focus();
+                Some((*accuracies.index(idx) + *accuracies.index(idx - 1)) / 2.0)
+            }
+        } else {
+            None
         }
     }
 }
