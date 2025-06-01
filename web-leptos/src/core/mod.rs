@@ -39,7 +39,7 @@ struct Backend {
 impl App {
     pub fn new() -> Self {
         let core = shared::Core::new();
-        let (view, render) = signal(Arc::new(core.view()));
+        let (view, render) = signal(core.view());
         let (event, set_event) = signal(Event::StartGeolocation);
         let file_download = RwSignal::new(None);
         let backend = Arc::new(Backend {
@@ -72,7 +72,7 @@ impl Backend {
         for effect in effects {
             match effect {
                 Effect::Render(_) => {
-                    self.render.set(Arc::new(self.core.view()));
+                    self.render.set(self.core.view());
                 }
                 Effect::Time(req) => self.clone().process_time(req),
                 Effect::Storage(req) => self.process_storage(req),
