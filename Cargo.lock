@@ -1163,7 +1163,7 @@ dependencies = [
 [[package]]
 name = "imbl"
 version = "5.0.0"
-source = "git+https://github.com/tage64/imbl#f86d4f5415b1e514e1654694678d3dc98c5098cf"
+source = "git+https://github.com/jneem/imbl#4ca6776217d5ba771d1de74437704408c7b9af22"
 dependencies = [
  "archery",
  "bitmaps",
